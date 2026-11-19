@@ -1,122 +1,51 @@
-/* KLB STORE Supabase client adapter.
-   Compatible with the database tables created in the current Supabase SQL Editor setup.
-   This is API groundwork; storefront/admin UI still needs to be wired to these calls. */
+/* KLB STORE Supabase integration starter. Load Supabase v2 CDN before this file. */
 (() => {
   const cfg = window.KLB_SUPABASE_CONFIG;
-  if (!cfg?.url || !cfg?.anonKey || !window.supabase?.createClient) {
-    window.KLBBackend = { configured: false, message: 'Supabase SDK/config missing.' };
+  if (!cfg || !cfg.url || !cfg.anonKey || cfg.url.includes('YOUR_PROJECT')) {
+    window.KLBBackend = { configured: false, message: 'Supabase configuration is missing.' };
     return;
   }
-  const client = window.supabase.createClient(cfg.url, cfg.anonKey);
-  const emailForUsername = (username) =>
-    `${String(username).trim().toLowerCase().replace(/[^a-z0-9_]/g, '')}@login.klbstore.invalid`;
-  const unwrap = async (query) => {
-    const { data, error } = await query;
-    if (error) throw error;
-    return data;
-  };
+  const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+  const usernameEmail = username => `${String(username).trim().toLowerCase().replace(/[^a-z0-9_]/g, '')}@login.klbstore.invalid`;
   const api = {
     configured: true,
-    client,
-    emailForUsername,
+    client: sb,
     async register(username, password) {
-      const clean = String(username || '').trim();
+      const clean = String(username).trim();
       if (!/^[a-zA-Z0-9_]{3,24}$/.test(clean)) throw new Error('Логин: 3–24 символа, латиница, цифры и _');
-      if (String(password).length < 8) throw new Error('Пароль должен быть не короче 8 символов.');
-      const { data, error } = await client.auth.signUp({
-        email: emailForUsername(clean), password,
-        options: { data: { username: clean, display_name: clean } }
-      });
+      const { data, error } = await sb.auth.signUp({ email: usernameEmail(clean), password, options: { data: { username: clean } } });
       if (error) throw error;
-      if (!data.user) throw new Error('Регистрация не завершилась. Проверь настройки подтверждения регистрации.');
+      if (!data.user) throw new Error('Не удалось создать пользователя.');
       return data.user;
     },
     async login(username, password) {
-      const { data, error } = await client.auth.signInWithPassword({
-        email: emailForUsername(username), password
-      });
+      const { data, error } = await sb.auth.signInWithPassword({ email: usernameEmail(username), password });
       if (error) throw error;
       const profile = await api.profile();
-      if (!profile) { await client.auth.signOut(); throw new Error('Профиль не найден. Обратись к администратору.'); }
+      if (profile?.status === 'blocked') { await sb.auth.signOut(); throw new Error('Аккаунт заблокирован.'); }
       return profile;
     },
-    async logout() { const { error } = await client.auth.signOut(); if (error) throw error; },
-    async session() {
-      const { data, error } = await client.auth.getSession();
-      if (error) throw error;
-      return data.session;
-    },
+    async logout() { const { error } = await sb.auth.signOut(); if (error) throw error; },
+    async session() { const { data, error } = await sb.auth.getSession(); if (error) throw error; return data.session; },
     async profile() {
-      const session = await api.session();
-      if (!session) return null;
-      return unwrap(client.from('profiles').select('*').eq('id', session.user.id).single());
+      const session = await api.session(); if (!session) return null;
+      const { data, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+      if (error) throw error; return data;
     },
-    async isAdmin() {
-      const p = await api.profile();
-      return p?.role === 'admin';
-    },
-    async products() {
-      return unwrap(client.from('products').select('*').eq('status','active').order('created_at',{ascending:false}));
-    },
-    async submitSellerApplication(payload) {
-      const session = await api.session();
-      if (!session) throw new Error('Войдите в аккаунт, чтобы подать заявку.');
-      const profile = await api.profile();
-      return unwrap(client.from('seller_applications').insert({
-        user_id: session.user.id,
-        username: profile.username,
-        description: payload.description,
-        benefits: payload.benefits,
-        age: Number(payload.age),
-        telegram: payload.telegram,
-        status: 'pending'
-      }).select().single());
-    },
-    async mySellerApplications() {
-      return unwrap(client.from('seller_applications').select('*').order('created_at',{ascending:false}));
-    },
-    async adminSellerApplications() {
-      if (!await api.isAdmin()) throw new Error('Недостаточно прав.');
-      return unwrap(client.from('seller_applications').select('*').order('created_at',{ascending:false}));
-    },
+    async products() { const { data, error } = await sb.from('products').select('*').eq('status','active').order('created_at',{ascending:false}); if(error) throw error; return data; },
+    async submitSellerApplication(payload) { const { data, error } = await sb.from('seller_applications').insert(payload).select().single(); if(error) throw error; return data; },
+    async sellerApplications() { const { data, error } = await sb.from('seller_applications').select('*').order('created_at',{ascending:false}); if(error) throw error; return data; },
     async reviewSellerApplication(id, approved) {
-      if (!await api.isAdmin()) throw new Error('Недостаточно прав.');
-      const app = await unwrap(client.from('seller_applications')
-        .update({status: approved ? 'approved' : 'rejected', updated_at: new Date().toISOString()})
-        .eq('id', id).select().single());
-      if (approved) {
-        await unwrap(client.from('profiles').update({role:'seller'}).eq('id', app.user_id));
-      }
-      return app;
+      const { data, error } = await sb.from('seller_applications').update({status: approved ? 'approved' : 'rejected', reviewed_at: new Date().toISOString()}).eq('id',id).select().single();
+      if(error) throw error;
+      if(approved) { const { error: roleError } = await sb.from('profiles').update({role:'seller'}).eq('id',data.user_id); if(roleError) throw roleError; }
+      return data;
     },
-    async myOrders() {
-      return unwrap(client.from('orders').select('*').order('created_at',{ascending:false}));
-    },
-    async favorites() {
-      const rows = await unwrap(client.from('favorites').select('product_id'));
-      return rows.map(row => row.product_id);
-    },
-    async toggleFavorite(productId) {
-      const ids = await api.favorites();
-      if (ids.includes(productId)) {
-        await unwrap(client.from('favorites').delete().eq('product_id',productId));
-        return false;
-      }
-      await unwrap(client.from('favorites').insert({product_id:productId}));
-      return true;
-    },
-    async adminProducts() {
-      if (!await api.isAdmin()) throw new Error('Недостаточно прав.');
-      return unwrap(client.from('products').select('*').order('created_at',{ascending:false}));
-    },
-    async adminOrders() {
-      if (!await api.isAdmin()) throw new Error('Недостаточно прав.');
-      return unwrap(client.from('orders').select('*').order('created_at',{ascending:false}));
-    },
-    async adminProfiles() {
-      if (!await api.isAdmin()) throw new Error('Недостаточно прав.');
-      return unwrap(client.from('profiles').select('*').order('created_at',{ascending:false}));
-    }
+    async createOrder(product) { const session=await api.session(); if(!session) throw new Error('Войдите, чтобы оформить заказ.'); const { data,error }=await sb.from('orders').insert({buyer_id:session.user.id,seller_id:product.seller_id,product_id:product.id,product_title:product.title,amount:product.price}).select().single(); if(error) throw error; return data; },
+    async myOrders() { const { data,error }=await sb.from('orders').select('*').order('created_at',{ascending:false}); if(error) throw error; return data; },
+    async favorites() { const { data,error }=await sb.from('favorites').select('product_id'); if(error) throw error; return data.map(x=>x.product_id); },
+    async toggleFavorite(productId) { const ids=await api.favorites(); if(ids.includes(productId)){const {error}=await sb.from('favorites').delete().eq('product_id',productId);if(error)throw error;return false;}const {error}=await sb.from('favorites').insert({product_id:productId});if(error)throw error;return true; },
+    async isAdmin() { const p=await api.profile(); return p?.role==='admin'&&p.status==='active'; }
   };
   window.KLBBackend = api;
 })();
