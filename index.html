@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KLB STORE — цифровой маркетплейс</title>
+  <meta name="description" content="KLB STORE — маркетплейс цифровых товаров">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <header class="header">
+    <a class="brand" href="#" aria-label="KLB STORE">
+      <span class="brand-mark">KLB</span><span class="brand-store">STORE</span>
+    </a>
+    <nav class="nav">
+      <a class="active" href="#catalog">Каталог</a><a href="#categories">Категории</a><a href="#seller">Продавцам</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-button" aria-label="Избранное">♡</button>
+      <button class="login-button" id="loginBtn">Войти <span>↗</span></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> ЦИФРОВОЙ МАРКЕТПЛЕЙС</div>
+        <h1>ТВОЯ ИГРА.<br><span>ТВОИ ПРАВИЛА.</span></h1>
+        <p>Цифровые товары от проверенных продавцов.<br>Удобно. Быстро. Под контролем.</p>
+        <a class="primary-button" href="#catalog">Открыть каталог <span>→</span></a>
+        <div class="hero-stats"><div><strong>01</strong><span>ЕДИНАЯ ПЛОЩАДКА</span></div><div><strong>24/7</strong><span>ДОСТУП К КАТАЛОГУ</span></div></div><div class="hero-trust"><span>◇</span> ПРОДАВЦЫ — ТОЛЬКО ПО ОДОБРЕНИЮ АДМИНИСТРАЦИИ</div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <div class="hero-cube"><span>K</span></div>
+        <div class="floating-tag tag-top">KLB <small>MARKET</small></div>
+        <div class="floating-tag tag-bottom"><span class="blue-dot"></span> DIGITAL GOODS</div>
+      </div>
+    </section>
+
+    <section class="category-section" id="categories">
+      <div class="section-heading"><div><span class="section-kicker">НАВИГАЦИЯ</span><h2>Категории</h2></div><span class="section-note">Выбери направление</span></div>
+      <div class="categories">
+        <button class="category active" data-category="all"><span class="category-icon">✦</span><span>Все товары</span></button>
+        <button class="category" data-category="games"><span class="category-icon">⌘</span><span>Игровые товары</span></button>
+        <button class="category" data-category="keys"><span class="category-icon">▣</span><span>Ключи</span></button>
+        <button class="category" data-category="subscriptions"><span class="category-icon">◉</span><span>Подписки</span></button>
+        <button class="category" data-category="accounts"><span class="category-icon">◎</span><span>Аккаунты</span></button>
+        <button class="category" data-category="other"><span class="category-icon">＋</span><span>Другое</span></button>
+      </div>
+    </section>
+
+    <section class="catalog-section" id="catalog">
+      <div class="section-heading catalog-heading"><div><span class="section-kicker">ВИТРИНА</span><h2>Популярные товары</h2></div>
+        <div class="catalog-tools"><label class="search"><span>⌕</span><input id="searchInput" type="search" placeholder="Поиск по каталогу"></label><select id="sortSelect" aria-label="Сортировка"><option value="default">Сначала популярные</option><option value="low">Сначала дешевле</option><option value="high">Сначала дороже</option></select></div>
+      </div>
+      <div class="product-grid" id="productGrid"></div>
+      <div class="empty-state" id="emptyState" hidden>Ничего не найдено. Попробуй изменить поиск.</div>
+    </section>
+
+    <section class="seller-banner" id="seller">
+      <div class="seller-content"><span class="section-kicker">ПАРТНЁРСКАЯ ПРОГРАММА</span><h2>Хочешь продавать<br>на <span>KLB STORE</span>?</h2><p>Площадка работает с продавцами, получившими приглашение и подтверждение администрации.</p><button class="outline-button" id="sellerBtn">Запросить доступ <span>↗</span></button></div>
+      <div class="seller-graphic"><div class="seller-ring"></div><div class="seller-symbol">K</div><div class="seller-caption">SELLER<br>ACCESS</div></div>
+    </section>
+  </main>
+
+  <footer><div class="brand footer-brand"><span class="brand-mark">KLB</span><span class="brand-store">STORE</span></div><span>© 2026 KLB STORE</span><span>Цифровой маркетплейс</span></footer>
+  <div class="toast" id="toast"></div>
+  <script src="script.js"></script>
+</body>
+</html>
