@@ -2,3 +2,16 @@
 @media(max-width:1100px){.sidebar{width:205px}.content{padding:22px}.stats{grid-template-columns:repeat(2,1fr)}.dashboard-grid{grid-template-columns:1fr}.orders-panel,.listings-panel{grid-column:auto}}
 @media(max-width:700px){.sidebar{position:fixed;left:-245px;top:0;bottom:0;z-index:20;width:235px;transition:left .25s;box-shadow:10px 0 35px #0005}.sidebar.open{left:0}.header{height:65px;padding:0 15px}.menu-toggle{display:block;background:transparent;border:1px solid #203047;color:#a9b8cc;border-radius:8px;width:34px;height:34px}.header-title{font-size:13px}.live{font-size:7px;padding:6px}.header-right{gap:8px}.content{padding:20px 14px}.welcome h1{font-size:24px}.date-btn{padding:8px;font-size:9px}.stats{gap:8px}.stat-card{padding:12px;min-height:120px}.stat-card strong{font-size:21px}.stat-top{font-size:9px}.dashboard-grid{gap:10px}.panel{padding:13px}.chart{height:155px}.orders-panel{overflow:hidden}.table-wrap{margin:0 -5px}.listing{gap:8px}.listing strong{font-size:14px}.notice{padding:10px}.notice p{font-size:8px}}
 .empty-state{padding:16px 4px;color:#718198;font-size:11px;margin:0}
+
+/* Financial analytics and moderation review screens */
+.financial-panel{padding:22px;margin:0 0 22px}
+.financial-period-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.financial-period{display:grid;gap:12px;padding:16px;border:1px solid #2a3e58;background:#0c1726;border-radius:13px}
+.financial-period>b{font-size:14px;color:#dceaff}
+.financial-period>div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:9px;border-bottom:1px solid #26364b}
+.financial-period>div span{font-size:12px;color:#9eb0c8}
+.financial-period>div strong{font-size:18px;color:#8ec0ff;white-space:nowrap}
+.financial-period>small{color:#93a8c2}
+.reports-panel{padding:22px;margin-bottom:20px}
+.report-description{max-width:300px;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){.financial-period-grid{grid-template-columns:1fr}.financial-panel,.reports-panel{padding:14px}}

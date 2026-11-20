@@ -20,6 +20,14 @@
     'Order is not awaiting seller completion': 'Этот заказ уже обработан или не ожидает выполнения.',
     'Seller has not confirmed completion': 'Продавец ещё не подтвердил выполнение заказа.',
     'Escrow balance mismatch': 'Не удалось сверить удержанные средства. Обратись в поддержку.',
+    'This order cannot be disputed': 'Этот заказ больше нельзя оспорить.',
+    'Review is available only after a completed order': 'Оставить отзыв можно после завершения сделки.',
+    'Rating must be from 1 to 5': 'Оценка должна быть от 1 до 5.',
+    'Cannot report yourself': 'Нельзя отправить жалобу на самого себя.',
+    'Chat participant unavailable': 'Пользователь не является участником этого чата.',
+    'Profile not found': 'Профиль не найден.',
+    'Report description must contain 10 to 2000 characters': 'Описание жалобы должно содержать от 10 до 2000 символов.',
+    'Dispute reason must contain 10 to 2000 characters': 'Причина спора должна содержать от 10 до 2000 символов.',
 
     'Invalid TRC20 address': 'Проверь адрес USDT TRC20.',
     'Bank and phone required': 'Укажи банк и номер телефона.',
@@ -143,11 +151,20 @@
       const latest = must(await sb.from('marketplace_messages').select('chat_id,body,sender_id,created_at').in('chat_id', chats.map(c => c.id)).order('created_at', { ascending: false }));
       const latestMap = {};
       for (const message of latest) if (!latestMap[message.chat_id]) latestMap[message.chat_id] = message;
+      const [disputes, reviews] = await Promise.all([
+        must(await sb.from('marketplace_disputes').select('*').in('order_id', orderIds)),
+        must(await sb.from('marketplace_reviews').select('*').in('order_id', orderIds))
+      ]);
+      const disputeMap = Object.fromEntries(disputes.map(d => [d.order_id, d]));
+      const reviewMap = Object.fromEntries(reviews.map(r => [r.order_id, r]));
       return chats.map(c => ({
         ...c,
         order: orderMap[c.order_id] || null,
+        otherUserId: c.buyer_id === id ? c.seller_id : c.buyer_id,
         otherUsername: names[c.buyer_id === id ? c.seller_id : c.buyer_id]?.username || 'Пользователь',
-        latestMessage: latestMap[c.id] || null
+        latestMessage: latestMap[c.id] || null,
+        dispute: disputeMap[c.order_id] || null,
+        review: reviewMap[c.order_id] || null
       }));
     },
     async chatMessages(chatId) {
@@ -165,6 +182,46 @@
     },
     async confirmOrderReceived(orderId) {
       return must(await sb.rpc('confirm_marketplace_order_received', { p_order_id: orderId }));
+    },
+    async createReview(orderId, rating, comment) {
+      return must(await sb.rpc('create_marketplace_review', {
+        p_order_id: orderId, p_rating: Number(rating), p_comment: String(comment || '').trim()
+      }));
+    },
+    async createDispute(orderId, reason, evidencePath = null) {
+      return must(await sb.rpc('create_marketplace_dispute', {
+        p_order_id: orderId, p_reason: String(reason || '').trim(), p_evidence_path: evidencePath
+      }));
+    },
+    async uploadModerationEvidence(file) {
+      if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('Прикрепи изображение PNG, JPG или WEBP.');
+      if (file.size > 5 * 1024 * 1024) throw new Error('Размер скриншота не должен превышать 5 МБ.');
+      const id = await uid();
+      const ext = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' })[file.type] || 'png';
+      const path = `${id}/reports/${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${ext}`;
+      const { error } = await sb.storage.from('klb-report-evidence').upload(path, file, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      return path;
+    },
+    async createAccountReport(targetUserId, description, evidencePath = null, chatId = null) {
+      return must(await sb.rpc('create_marketplace_account_report', {
+        p_target_user_id: targetUserId, p_description: String(description || '').trim(),
+        p_evidence_path: evidencePath, p_chat_id: chatId
+      }));
+    },
+    async profileDetails(userId) {
+      const profile = must(await sb.from('profiles').select('id,username,role,status,bio,created_at').eq('id', userId).single());
+      const stats = must(await sb.rpc('marketplace_public_profile_stats', { p_user_id: userId }));
+      const reviews = must(await sb.from('marketplace_reviews').select('id,order_id,reviewer_id,rating,comment,created_at')
+        .eq('seller_id', userId).order('created_at', { ascending: false }).limit(50));
+      const reviewers = await profilesMap(reviews.map(r => r.reviewer_id));
+      return { profile, stats, reviews: reviews.map(r => ({ ...r, reviewer: reviewers[r.reviewer_id]?.username || 'Пользователь' })) };
+    },
+    async updateMyBio(bio) {
+      const id = await uid();
+      const clean = String(bio || '').trim();
+      if (clean.length > 1000) throw new Error('Описание профиля: максимум 1000 символов.');
+      return must(await sb.from('profiles').update({ bio: clean }).eq('id', id).select('bio').single());
     },
 
     /* ---------- admin ---------- */
@@ -241,6 +298,56 @@
       async savePaymentSettings(bank, card) {
         const r = must(await sb.from('wallet_payment_settings').update({ deposit_bank: bank, deposit_card: card, updated_at: new Date().toISOString(), updated_by: await uid() }).eq('id', true).select());
         if (!r || !r.length) throw new Error('Настройки не сохранены: нет прав или строка настроек отсутствует.');
+      },
+      async financialStats() {
+        return must(await sb.rpc('marketplace_admin_financial_stats'));
+      },
+      async accountReports() {
+        const rows = must(await sb.from('marketplace_reports').select('*').order('created_at', { ascending: false }).limit(300));
+        const names = await profilesMap(rows.flatMap(r => [r.reporter_id, r.target_user_id]));
+        return rows.map(r => ({
+          ...r,
+          reporter: names[r.reporter_id]?.username || r.reporter_id.slice(0, 8),
+          target: names[r.target_user_id]?.username || r.target_user_id.slice(0, 8),
+          targetRole: names[r.target_user_id]?.role || 'user'
+        }));
+      },
+      async marketplaceDisputes() {
+        const rows = must(await sb.from('marketplace_disputes').select('*').order('created_at', { ascending: false }).limit(300));
+        if (!rows.length) return [];
+        const orderIds = [...new Set(rows.map(r => r.order_id))];
+        const orders = must(await sb.from('marketplace_orders').select('*').in('id', orderIds));
+        const names = await profilesMap(rows.flatMap(r => [r.buyer_id, r.seller_id]));
+        const orderMap = Object.fromEntries(orders.map(o => [o.id, o]));
+        return rows.map(r => ({
+          ...r, order: orderMap[r.order_id] || null,
+          buyer: names[r.buyer_id]?.username || r.buyer_id.slice(0, 8),
+          seller: names[r.seller_id]?.username || r.seller_id.slice(0, 8)
+        }));
+      },
+      async disputeDetails(disputeId) {
+        const d = must(await sb.from('marketplace_disputes').select('*').eq('id', disputeId).single());
+        const [o, messages, names] = await Promise.all([
+          sb.from('marketplace_orders').select('*').eq('id', d.order_id).single(),
+          sb.from('marketplace_messages').select('id,sender_id,body,created_at').eq('chat_id', d.chat_id).order('created_at', { ascending: true }).limit(500),
+          profilesMap([d.buyer_id, d.seller_id])
+        ]);
+        const order = must(o), transcript = must(messages);
+        const senders = await profilesMap(transcript.map(m => m.sender_id));
+        return { dispute: d, order, buyer: names[d.buyer_id]?.username || 'Покупатель', seller: names[d.seller_id]?.username || 'Продавец',
+          messages: transcript.map(m => ({ ...m, sender: senders[m.sender_id]?.username || 'Администрация' })) };
+      },
+      async evidenceUrl(path) {
+        if (!path) return null;
+        const { data, error } = await sb.storage.from('klb-report-evidence').createSignedUrl(path, 1800);
+        if (error) throw error;
+        return data.signedUrl;
+      },
+      async resolveAccountReport(reportId, action, note = '') {
+        must(await sb.rpc('admin_resolve_marketplace_report', { p_report_id: reportId, p_action: action, p_note: note }));
+      },
+      async resolveDispute(disputeId, approve, note = '') {
+        must(await sb.rpc('admin_resolve_marketplace_dispute', { p_dispute_id: disputeId, p_approve: !!approve, p_note: note }));
       }
     }
   };

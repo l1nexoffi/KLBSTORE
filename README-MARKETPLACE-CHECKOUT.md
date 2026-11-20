@@ -47,3 +47,28 @@ For example, on a 1,000 ₽ order: 50 ₽ is the service commission and 950 ₽ 
 ## Current limitation before real-money operation
 
 This version does not yet include a buyer dispute workflow, automatic refund / cancellation, seller delivery deadlines, or an administrator resolution screen for orders stuck in escrow. Until those policies and screens are added and tested, an order left unconfirmed remains in escrow and must not be treated as an automatically refundable or automatically paid transaction. Test with small balances before real sales.
+
+
+## Trust, safety, reviews and disputes add-on
+
+After `marketplace-escrow-chat.sql`, run `marketplace-trust-safety.sql` once in Supabase SQL Editor as the project owner / postgres role. This add-on creates public profile reviews, account reports, order disputes and private evidence storage; enables admin read access to dispute chat transcripts; adds admin financial statistics for 7- and 30-day periods; and records refunds / seller chargebacks.
+
+### Account reports
+
+From a participant profile in chat, a user can report the other participant, add a description and optionally upload a screenshot (PNG/JPG/WEBP, max 5 MB). Evidence is stored in a private Storage bucket and only admins can create signed links to read it. The admin may block the account, remove seller trading privileges (seller role is revoked and active listings are paused), or mark the report as no violation.
+
+### Reviews and public profiles
+
+A buyer can leave one 1–5 star review after a completed order. Public profiles show the user's description, completed purchase/sale counts and seller reviews. A user edits their own description in My Profile.
+
+### Disputes and refunds
+
+A buyer may open one dispute for an order while it is paid, seller-completed, or completed. Evidence is optional. The order is frozen as disputed until an admin reviews the buyer/seller chat transcript. If the dispute is approved before payout, funds are returned from escrow. If the seller had already received payout, the buyer receives the gross order amount and the seller is debited the full gross amount (not the 95% net); the 5% commission already recorded by KLB STORE is retained. Seller available balance can therefore become negative and represents debt to the marketplace. Existing checkout and withdrawal RPCs still require enough positive available balance. If the dispute is rejected, the order returns to its prior state, no refund is made, and a decision message is written to the chat.
+
+### Admin financial summary
+
+The admin overview displays retained commission income and gross confirmed order turnover for the last 7 and 30 days. Refunded disputes are excluded from confirmed turnover; a commission already retained after a completed-order dispute remains in commission income.
+
+### Smoke tests
+
+Use two ordinary test accounts and a low-priced listing. Check: profile view and bio edit; account report with a screenshot; one completed sale and buyer review; dispute before payout; dispute after payout; both approve and reject outcomes; admin financial totals. For the post-payout example, a 100 ₽ order credits 95 ₽ to the seller; if an approved dispute follows while the 95 ₽ remains available, a 100 ₽ chargeback leaves the seller at -5 ₽ and refunds 100 ₽ to the buyer.
