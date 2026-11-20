@@ -23,3 +23,6 @@ footer{max-width:1240px;margin:auto;padding:22px 28px 28px;border-top:1px solid 
 html,body{max-width:100%;overflow-x:hidden}
 .profile-menu button,.modal-form button,.primary-action{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 #appModal.open{overscroll-behavior:contain}
+
+/* Seller attribution on storefront cards */
+.product-seller{display:block;margin-top:5px;color:#8ea0b8;font-size:11px;line-height:1.35}

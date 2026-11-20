@@ -82,14 +82,20 @@
     },
     async applyForSeller({ nickname, description, benefit, age, telegram }) {
       const id = await uid();
-      return must(await sb.from('seller_applications').insert({ user_id: id, nickname, description, benefit, age, telegram }).select().single());
+      // The deployed KLB schema uses username + benefits (plural), not nickname + benefit.
+      return must(await sb.from('seller_applications').insert({
+        user_id: id, username: nickname, description, benefits: benefit, age, telegram
+      }).select().single());
     },
 
     /* ---------- listings ---------- */
     async catalog() {
       const rows = must(await sb.from('seller_listings').select('*').eq('status', 'active').order('created_at', { ascending: false }));
       const names = await profilesMap(rows.map(r => r.seller_id));
-      return rows.map(r => ({ ...r, seller: names[r.seller_id]?.username || '' }));
+      return rows.map(r => ({
+        ...r,
+        seller: names[r.seller_id]?.role === 'admin' ? 'KLB STORE' : (names[r.seller_id]?.username || '')
+      }));
     },
     async myListings() {
       const id = await uid();
@@ -137,10 +143,25 @@
       async sellerApplications() {
         const rows = must(await sb.from('seller_applications').select('*').order('created_at', { ascending: false }).limit(200));
         const names = await profilesMap(rows.map(r => r.user_id));
-        return rows.map(r => ({ id: r.id, userId: r.user_id, name: r.nickname, username: names[r.user_id]?.username || '', age: r.age, telegram: r.telegram, description: r.description, benefit: r.benefit, date: new Date(r.created_at).toLocaleString('ru-RU'), status: APP[r.status] || r.status }));
+        return rows.map(r => ({
+          id: r.id,
+          userId: r.user_id,
+          name: r.username || r.nickname || names[r.user_id]?.username || '',
+          username: names[r.user_id]?.username || r.username || '',
+          age: r.age,
+          telegram: r.telegram,
+          description: r.description,
+          benefit: r.benefits || r.benefit || '',
+          date: new Date(r.created_at).toLocaleString('ru-RU'),
+          status: APP[r.status] || r.status
+        }));
       },
       async reviewSeller(app, approve) {
-        const { error } = await sb.from('seller_applications').update({ status: approve ? 'approved' : 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: await uid() }).eq('id', app.id);
+        // Existing deployed schema stores review state in status; reviewed_at/reviewed_by
+        // are not present in every KLB migration variant, so do not require those columns.
+        const { error } = await sb.from('seller_applications')
+          .update({ status: approve ? 'approved' : 'rejected' })
+          .eq('id', app.id);
         if (error) throw error;
         // approval and revocation both go through the admin-only RPC (never touch an admin's own role)
         const target = must(await sb.from('profiles').select('role').eq('id', app.userId).single());
