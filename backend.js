@@ -13,7 +13,9 @@
     return;
   }
   const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
-  const usernameEmail = username => `${String(username).trim().toLowerCase().replace(/[^a-z0-9_]/g, '')}@login.klbstore.invalid`;
+  // Login is a username; Supabase Auth needs an email. The domain must be a real one (reserved TLDs like .invalid are rejected),
+  // so a technical address is derived. No email is ever sent (Confirm email must stay OFF). Override with cfg.emailDomain.
+  const usernameEmail = username => `klbstore.${String(username).trim().toLowerCase().replace(/[^a-z0-9_]/g, '')}@${cfg.emailDomain || 'gmail.com'}`;
   const api = {
     configured: true,
     client: sb,
