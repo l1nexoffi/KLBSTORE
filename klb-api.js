@@ -11,6 +11,16 @@
     'Invalid amount': 'Сумма должна быть от 100 до 1 000 000 ₽.',
     'Minimum withdrawal is 500': 'Минимальная сумма вывода 500 ₽.',
     'Insufficient balance': 'Недостаточно средств на балансе.',
+    'Listing unavailable': 'Объявление больше недоступно.',
+    'Listing price changed': 'Цена изменилась. Обнови каталог и попробуй ещё раз.',
+    'Not enough stock': 'Недостаточно товара в наличии.',
+    'Cannot buy your own listing': 'Нельзя купить собственное объявление.',
+    'Invalid quantity': 'Некорректное количество товара.',
+    'Order unavailable': 'Заказ не найден или у тебя нет к нему доступа.',
+    'Order is not awaiting seller completion': 'Этот заказ уже обработан или не ожидает выполнения.',
+    'Seller has not confirmed completion': 'Продавец ещё не подтвердил выполнение заказа.',
+    'Escrow balance mismatch': 'Не удалось сверить удержанные средства. Обратись в поддержку.',
+
     'Invalid TRC20 address': 'Проверь адрес USDT TRC20.',
     'Bank and phone required': 'Укажи банк и номер телефона.',
     'Unsupported method': 'Неподдерживаемый способ вывода.',
@@ -54,8 +64,8 @@
     /* ---------- wallet (user) ---------- */
     async wallet() {
       const id = await uid();
-      const r = must(await sb.from('wallets').select('available,reserved').eq('user_id', id).maybeSingle());
-      return { available: Number(r?.available || 0), reserved: Number(r?.reserved || 0) };
+      const r = must(await sb.from('wallets').select('available,reserved,escrow').eq('user_id', id).maybeSingle());
+      return { available: Number(r?.available || 0), reserved: Number(r?.reserved || 0), escrow: Number(r?.escrow || 0) };
     },
     async ledger() { return must(await sb.from('wallet_ledger').select('*').order('created_at', { ascending: false }).limit(100)); },
     async depositInstructions() {
@@ -115,6 +125,48 @@
     },
     async updateListing(listingId, patch) { return must(await sb.from('seller_listings').update(patch).eq('id', listingId).select().single()); },
 
+    /* ---------- wallet checkout, escrow and order chats ---------- */
+    async createMarketplaceOrder(listingId, quantity = 1, expectedUnitPrice = null) {
+      return must(await sb.rpc('create_marketplace_order', { p_listing_id: listingId, p_quantity: quantity, p_expected_unit_price: expectedUnitPrice }));
+    },
+    async myChats() {
+      const id = await uid();
+      const chats = must(await sb.from('marketplace_chats').select('*').order('created_at', { ascending: false }));
+      if (!chats.length) return [];
+      const orderIds = [...new Set(chats.map(c => c.order_id).filter(Boolean))];
+      const orders = orderIds.length
+        ? must(await sb.from('marketplace_orders').select('*').in('id', orderIds))
+        : [];
+      const orderMap = Object.fromEntries(orders.map(o => [o.id, o]));
+      const otherIds = chats.map(c => c.buyer_id === id ? c.seller_id : c.buyer_id);
+      const names = await profilesMap(otherIds);
+      const latest = must(await sb.from('marketplace_messages').select('chat_id,body,sender_id,created_at').in('chat_id', chats.map(c => c.id)).order('created_at', { ascending: false }));
+      const latestMap = {};
+      for (const message of latest) if (!latestMap[message.chat_id]) latestMap[message.chat_id] = message;
+      return chats.map(c => ({
+        ...c,
+        order: orderMap[c.order_id] || null,
+        otherUsername: names[c.buyer_id === id ? c.seller_id : c.buyer_id]?.username || 'Пользователь',
+        latestMessage: latestMap[c.id] || null
+      }));
+    },
+    async chatMessages(chatId) {
+      return must(await sb.from('marketplace_messages').select('id,chat_id,sender_id,body,created_at')
+        .eq('chat_id', chatId).order('created_at', { ascending: true }).limit(500));
+    },
+    async sendChatMessage(chatId, body) {
+      const id = await uid();
+      const clean = String(body || '').trim();
+      if (!clean || clean.length > 4000) throw new Error('Сообщение должно содержать от 1 до 4000 символов.');
+      must(await sb.from('marketplace_messages').insert({ chat_id: chatId, sender_id: id, body: clean }));
+    },
+    async sellerCompleteOrder(orderId) {
+      must(await sb.rpc('seller_complete_marketplace_order', { p_order_id: orderId }));
+    },
+    async confirmOrderReceived(orderId) {
+      return must(await sb.rpc('confirm_marketplace_order_received', { p_order_id: orderId }));
+    },
+
     /* ---------- admin ---------- */
     admin: {
       async deposits() {
@@ -173,9 +225,9 @@
       },
       async setBlocked(id, blocked) { must(await sb.rpc('admin_set_user_blocked', { p_user: id, p_blocked: blocked })); },
       async balances() {
-        const w = must(await sb.from('wallets').select('*').order('updated_at', { ascending: false }).limit(500));
+        const w = must(await sb.from('wallets').select('user_id,available,reserved,escrow,updated_at').order('updated_at', { ascending: false }).limit(500));
         const names = await profilesMap(w.map(r => r.user_id));
-        return w.map(r => ({ userId: r.user_id, username: names[r.user_id]?.username || r.user_id.slice(0, 8), available: Number(r.available), reserved: Number(r.reserved) }));
+        return w.map(r => ({ userId: r.user_id, username: names[r.user_id]?.username || r.user_id.slice(0, 8), available: Number(r.available), reserved: Number(r.reserved), escrow: Number(r.escrow || 0) }));
       },
       async ledger() {
         const rows = must(await sb.from('wallet_ledger').select('*').order('created_at', { ascending: false }).limit(200));

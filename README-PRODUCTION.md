@@ -28,4 +28,4 @@ GitHub Pages cannot host a database or secure server-side authentication. Supaba
 - `reviews`: completed-order reviews
 
 ## Current limitation
-`backend.js` exposes basic Supabase operations, but the existing storefront/admin UI still uses local demo storage. The next engineering step is to replace its localStorage data paths with calls to this API and add the server-side admin CRUD screens. Payment integration is not included; orders currently represent unpaid order requests only.
+`backend.js` exposes basic Supabase operations, but the existing storefront/admin UI still uses local demo storage. The next engineering step is to replace its localStorage data paths with calls to this API and add the server-side admin CRUD screens. Wallet checkout, escrow, order chats and the 5% seller commission are provided by `marketplace-escrow-chat.sql`. Funds remain in escrow until the buyer confirms receipt after seller completion. An automated dispute/refund/timeout workflow is not included yet and must be defined before high-volume real-money operation.
