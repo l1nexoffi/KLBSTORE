@@ -5,6 +5,13 @@
     window.KLBBackend = { configured: false, message: 'Supabase configuration is missing.' };
     return;
   }
+  if (!window.supabase) {
+    // Config is filled in but the Supabase library did not load: say so loudly instead of silently showing demo money.
+    window.KLBBackend = { configured: false, broken: true, message: 'Supabase library failed to load.' };
+    console.error('KLB: Supabase library failed to load (CDN blocked?). Wallet and listings are unavailable.');
+    document.addEventListener('DOMContentLoaded', () => document.body.insertAdjacentHTML('afterbegin', '<div style="position:sticky;top:0;z-index:99999;padding:10px 14px;background:#b3261e;color:#fff;font:14px sans-serif;text-align:center">Не удалось подключиться к Supabase. Обнови страницу или проверь соединение.</div>'));
+    return;
+  }
   const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
   const usernameEmail = username => `${String(username).trim().toLowerCase().replace(/[^a-z0-9_]/g, '')}@login.klbstore.invalid`;
   const api = {

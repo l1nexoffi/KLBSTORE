@@ -20,3 +20,6 @@ footer{max-width:1240px;margin:auto;padding:22px 28px 28px;border-top:1px solid 
 .balance-head span{font-size:10px;color:#8ea6cf;text-transform:uppercase;letter-spacing:.08em}
 .balance-head b{font-size:13px;color:#65a0ff}
 @media(max-width:600px){.top-actions{gap:6px}.balance-head{padding:6px 8px}.balance-head b{font-size:12px}.balance-head span{font-size:9px}}
+html,body{max-width:100%;overflow-x:hidden}
+.profile-menu button,.modal-form button,.primary-action{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#appModal.open{overscroll-behavior:contain}
