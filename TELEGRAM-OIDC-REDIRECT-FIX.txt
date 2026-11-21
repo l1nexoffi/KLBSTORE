@@ -1,0 +1,23 @@
+KLB STORE — исправление Telegram redirect_uri
+
+В этой версии убран Telegram.Login.open() popup flow, который у пользователя формировал запрос response_type=post_message без redirect_uri.
+Вместо этого включён официальный OIDC Authorization Code Flow + PKCE.
+
+BotFather → Login Widget:
+Allowed URL / origin: https://l1nexoffi.github.io
+Redirect URI: https://l1nexoffi.github.io/KLBSTORE
+
+Supabase → Edge Functions → Secrets:
+TELEGRAM_CLIENT_ID=9095406427
+TELEGRAM_CLIENT_SECRET=<Client Secret из BotFather>
+TELEGRAM_REDIRECT_URI=https://l1nexoffi.github.io/KLBSTORE
+TELEGRAM_BOT_TOKEN=<новый Bot API token>
+TELEGRAM_WEBHOOK_SECRET=<сгенерированный секрет>
+SITE_URL=https://l1nexoffi.github.io/KLBSTORE
+
+Не публикуйте Client Secret, Bot API token и Webhook Secret в GitHub, HTML, JavaScript или SQL.
+
+После загрузки сайта разверните обновлённую Edge Function:
+supabase functions deploy telegram-auth --no-verify-jwt
+
+Существующие SQL миграции повторно запускать не требуется.

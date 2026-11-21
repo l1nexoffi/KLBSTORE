@@ -251,6 +251,14 @@
     async createTelegramLinkCode() {
       return must(await sb.rpc('klb_create_telegram_link_code'));
     },
+    async telegramLoginCode(code, codeVerifier, redirectUri) {
+      if (!code || !codeVerifier || !redirectUri) throw new Error('Не хватает данных возврата Telegram. Начни вход заново.');
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { code, code_verifier: codeVerifier, redirect_uri: redirectUri } });
+      if (error) throw error;
+      const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
+      if (verifyError) throw verifyError;
+      return { ...data, session: verified.session };
+    },
     async telegramLogin(idToken) {
       if (typeof idToken !== 'string' || idToken.split('.').length !== 3) throw new Error('Некорректный Telegram ID token.');
       const { data, error } = await sb.functions.invoke('telegram-auth', { body: { id_token: idToken } });

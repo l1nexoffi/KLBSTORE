@@ -2,8 +2,8 @@
 
 ## Что изменено в этой сборке
 
-- Вход/быстрая регистрация через новый Telegram Login OIDC widget (`oauth.telegram.org/js/telegram-login.js?6`).
-- Backend проверяет подпись Telegram ID token по официальному JWKS, issuer и audience. Данные `user`, пришедшие отдельно из браузера, не используются как доказательство личности.
+- Вход/быстрая регистрация через ручной OIDC Authorization Code Flow с PKCE (`response_type=code`).
+- Сайт всегда отправляет явный `redirect_uri`, `state` и PKCE challenge. Edge Function обменивает code на токены через Telegram с Client ID + Client Secret и проверяет подпись ID token по JWKS, issuer и audience.
 - Telegram HTTP Bot API token остаётся только на сервере и используется webhook/уведомлениями продавцам.
 - Вход в Telegram больше не проверяется старым способом `hash` legacy widget.
 
@@ -26,12 +26,13 @@
 
 ```js
 telegramClientId: '9095406427',       // числовой Client ID из BotFather → Login Widget
-telegramBotUsername: 'KLBSTOREBOT_bot' // публичный username бота без @
+telegramBotUsername: 'KLBSTOREBOT_bot', // публичный username бота без @
+  telegramRedirectUri: 'https://l1nexoffi.github.io/KLBSTORE' // должен совпадать с BotFather и TELEGRAM_REDIRECT_URI
 ```
 
-В этой сборке кнопка авторизации уже встроена в окно входа. Она загружает `https://oauth.telegram.org/js/telegram-login.js?6` и вызывает официальный JS API `Telegram.Login.init()` / `Telegram.Login.open()` с OIDC scope `profile` и `write`. Не вставляй отдельный `<script data-onauth=...>` в HTML и не создавай вторую кнопку: это приведёт к дублированию. Callback получает подписанный `id_token`, который проверяется Edge Function `telegram-auth`.
+В этой сборке кнопка авторизации уже встроена в окно входа. При нажатии сайт генерирует `state` и PKCE verifier, затем перенаправляет браузер на `https://oauth.telegram.org/auth` с `response_type=code`, `redirect_uri`, `scope=openid profile telegram:bot_access`, `code_challenge` и `code_challenge_method=S256`. Возврат происходит на главную страницу KLB STORE; код передаётся в Edge Function `telegram-auth`.
 
-`Client Secret` не нужен для этого JS Login SDK — он нужен для отдельного OIDC Authorization Code Flow. Не помещай его в `supabase-config.js`, HTML, JavaScript или SQL. Серверная функция проверяет подписанный `id_token` по Telegram JWKS и `aud`.
+`Client Secret` хранится только в Supabase Edge Function Secrets (`TELEGRAM_CLIENT_SECRET`). Он используется сервером при POST на `https://oauth.telegram.org/token`; не помещай его в `supabase-config.js`, HTML, JavaScript или SQL.
 
 `telegramBotUsername` нужен для deep-link привязки Telegram к профилю продавца (`https://t.me/BOT_USERNAME?start=...`). Это не username канала KLB Store, если канал и бот имеют разные имена.
 
@@ -40,7 +41,9 @@ telegramBotUsername: 'KLBSTOREBOT_bot' // публичный username бота �
 Открой Supabase Dashboard → Edge Functions → Secrets и добавь:
 
 - `TELEGRAM_BOT_TOKEN` — новый HTTP Bot API token после `/revoke`;
-- `TELEGRAM_CLIENT_ID` — тот же числовой Client ID из BotFather → Login Widget; он должен совпадать с `telegramClientId` в `supabase-config.js`;
+- `TELEGRAM_CLIENT_ID` — числовой Client ID из BotFather → Login Widget; он должен совпадать с `telegramClientId` в `supabase-config.js`;
+- `TELEGRAM_CLIENT_SECRET` — Client Secret из BotFather (только серверный секрет);
+- `TELEGRAM_REDIRECT_URI` — точно `https://l1nexoffi.github.io/KLBSTORE`, без завершающего `/`; он должен совпадать с `telegramRedirectUri` в `supabase-config.js` и записью Redirect URIs в BotFather;
 - `TELEGRAM_WEBHOOK_SECRET` — случайная длинная строка не короче 32 символов;
 - `SITE_URL` — полный публичный URL сайта, включая путь GitHub Pages, например `https://USERNAME.github.io/klbstore/`.
 

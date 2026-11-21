@@ -18,8 +18,9 @@ function profileMenuView(){modal(`Привет, ${esc(current.username)}!`, `<di
 function authDialog(mode='login'){
   const signup=mode==='signup';
   const telegramClientId=String(window.KLB_SUPABASE_CONFIG?.telegramClientId||'').trim();
-  const telegramEnabled=/^\d+$/.test(telegramClientId);
-  const telegramBlock=telegramEnabled?'<div class="telegram-login-divider">или</div><div id="telegramLoginMount" class="telegram-login-mount"><button type="button" class="tg-auth-button" data-style="shine">Войти через Telegram</button></div>':'';
+  const telegramRedirectUri=String(window.KLB_SUPABASE_CONFIG?.telegramRedirectUri||'').trim();
+  const telegramEnabled=/^\d+$/.test(telegramClientId)&&/^https:\/\//i.test(telegramRedirectUri);
+  const telegramBlock=telegramEnabled?'<div class="telegram-login-divider">или</div><div id="telegramLoginMount" class="telegram-login-mount"><button type="button" class="tg-auth-button">Войти через Telegram</button></div>':'';
   modal(signup?'Создать аккаунт':'Вход в KLB STORE',`<form id="authForm" class="modal-form">${signup?'<label>Никнейм / логин<input name="username" minlength="3" maxlength="24" required autocomplete="username" placeholder="Твой ник"></label>':'<label>Логин<input name="username" required autocomplete="username" placeholder="Логин"></label>'}<label>Пароль<input name="password" type="password" minlength="4" required autocomplete="current-password" placeholder="Пароль"></label>${signup?'<label>Повтор пароля<input name="confirm" type="password" minlength="4" required placeholder="Повтори пароль"></label>':''}<p class="form-error" id="authError"></p><button class="primary-action" type="submit">${signup?'Зарегистрироваться':'Войти'}</button><button class="link-action" type="button" id="switchAuth">${signup?'Уже есть аккаунт? Войти':'Нет аккаунта? Зарегистрироваться'}</button>${telegramBlock}</form>`);
   $('#authForm').addEventListener('submit',e=>{
     e.preventDefault();
@@ -40,79 +41,79 @@ function authDialog(mode='login'){
   });
   $('#switchAuth').onclick=()=>authDialog(signup?'login':'signup');
   if(telegramEnabled&&$('#telegramLoginMount')){
-    const mount=$('#telegramLoginMount');
-    const button=mount.querySelector('.tg-auth-button');
-    const showTelegramError=message=>{
-      const old=mount.querySelector('.telegram-login-error');
-      if(old)old.remove();
-      mount.insertAdjacentHTML('beforeend',`<small class="telegram-login-error">${esc(message)}</small>`);
-      if(button){button.disabled=false;button.textContent='Повторить вход через Telegram';}
+    const button=$('#telegramLoginMount .tg-auth-button');
+    button.onclick=async()=>{
+      button.disabled=true;button.textContent='Переход в Telegram…';
+      try{await beginTelegramOidcLogin(telegramClientId,telegramRedirectUri);}
+      catch(error){button.disabled=false;button.textContent='Войти через Telegram';const mount=$('#telegramLoginMount');mount.insertAdjacentHTML('beforeend',`<small class=\"telegram-login-error\">${esc(error?.message||'Не удалось начать вход через Telegram.')}</small>`);}
     };
-    if(button){
-      button.disabled=true;
-      button.textContent='Загрузка Telegram…';
-      const initTelegramLogin=()=>{
-        const login=window.Telegram&&window.Telegram.Login;
-        if(!login||typeof login.init!=='function'||typeof login.open!=='function'){
-          showTelegramError('Библиотека Telegram Login не загрузилась. Проверьте соединение и Allowed URLs в BotFather.');
-          return;
-        }
-        try{
-          // Current Telegram Login SDK API (OIDC). The callback receives a signed id_token;
-          // it is verified by the server-side telegram-auth Edge Function.
-          login.init({client_id:Number(telegramClientId),scope:['profile','write'],lang:'ru'},authData=>window.onTelegramAuth(authData));
-          button.disabled=false;
-          button.textContent='Войти через Telegram';
-          button.onclick=()=>{
-            button.disabled=true;
-            try{login.open();}
-            catch(error){button.disabled=false;showTelegramError(error?.message||'Не удалось открыть Telegram Login.');}
-          };
-        }catch(error){
-          showTelegramError(error?.message||'Не удалось инициализировать Telegram Login.');
-        }
-      };
-      if(window.Telegram&&window.Telegram.Login){
-        initTelegramLogin();
-      }else{
-        const widget=document.createElement('script');
-        widget.async=true;
-        widget.src='https://oauth.telegram.org/js/telegram-login.js?6';
-        widget.onload=initTelegramLogin;
-        widget.onerror=()=>showTelegramError('Не удалось загрузить Telegram Login. Проверьте соединение и Allowed URLs в BotFather.');
-        document.head.append(widget);
-      }
-    }
   }
+
 }
+
+function base64Url(bytes){
+  let binary='';for(const b of bytes)binary+=String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function randomUrlSafe(length=32){const bytes=new Uint8Array(length);crypto.getRandomValues(bytes);return base64Url(bytes);}
+async function beginTelegramOidcLogin(clientId,redirectUri){
+  if(!window.isSecureContext||!crypto?.subtle)throw new Error('Для входа через Telegram нужен HTTPS.');
+  if(!SB)throw new Error('Сначала подключи Supabase.');
+  const state=randomUrlSafe(32);
+  const verifier=randomUrlSafe(48);
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
+  const challenge=base64Url(new Uint8Array(digest));
+  sessionStorage.setItem('klb_telegram_oidc_pending',JSON.stringify({state,verifier,redirectUri,createdAt:Date.now()}));
+  const params=new URLSearchParams({
+    client_id:clientId,
+    redirect_uri:redirectUri,
+    response_type:'code',
+    scope:'openid profile telegram:bot_access',
+    state,
+    code_challenge:challenge,
+    code_challenge_method:'S256'
+  });
+  // Use Telegram's documented OIDC Authorization Code + PKCE flow.
+  location.assign(`https://oauth.telegram.org/auth?${params.toString()}`);
+}
+async function handleTelegramOidcCallback(){
+  const params=new URLSearchParams(location.search);
+  const code=params.get('code');
+  const oauthError=params.get('error');
+  if(!code&&!oauthError)return false;
+  const state=params.get('state');
+  const savedRaw=sessionStorage.getItem('klb_telegram_oidc_pending');
+  sessionStorage.removeItem('klb_telegram_oidc_pending');
+  // Remove one-time authorization code from the address bar immediately.
+  history.replaceState({},document.title,location.pathname+location.hash);
+  if(oauthError)throw new Error(params.get('error_description')||oauthError);
+  if(!savedRaw)throw new Error('Сессия входа Telegram не найдена. Начни вход заново.');
+  let saved;try{saved=JSON.parse(savedRaw)}catch{throw new Error('Не удалось прочитать данные входа Telegram.');}
+  if(!state||state!==saved.state)throw new Error('Проверка state не прошла. Начни вход через Telegram заново.');
+  if(Date.now()-Number(saved.createdAt||0)>10*60*1000)throw new Error('Время входа Telegram истекло. Попробуй ещё раз.');
+  if(!SB)throw new Error('Supabase не подключён.');
+  const result=await SB.telegramLoginCode(code,saved.verifier,saved.redirectUri);
+  await refreshProfile();
+  if(!current)throw new Error('Telegram подтвердил вход, но профиль KLB STORE не загрузился.');
+  notify(result.is_new?'Аккаунт через Telegram создан!':'Вход через Telegram выполнен');
+  if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady();
+  if(result.is_new){
+    modal('Задай пароль',`<p class="modal-lead">Аккаунт создан через Telegram. Придумай пароль, чтобы можно было входить и по логину.</p><form id="telegramPasswordForm" class="modal-form"><label>Новый пароль<input name="password" type="password" minlength="6" required></label><label>Повтори пароль<input name="confirm" type="password" minlength="6" required></label><p class="form-error" id="telegramPasswordError"></p><button class="primary-action">Сохранить пароль</button></form>`);
+    $('#telegramPasswordForm').onsubmit=async e=>{
+      e.preventDefault();const f=e.currentTarget;
+      if(f.elements.password.value!==f.elements.confirm.value){$('#telegramPasswordError').textContent='Пароли не совпадают.';return;}
+      const b=f.querySelector('button');b.disabled=true;
+      try{const {error}=await SB.client.auth.updateUser({password:f.elements.password.value});if(error)throw error;modal('Готово','<p class="modal-lead">Теперь можно входить через Telegram или логин и пароль.</p>');}
+      catch(err){$('#telegramPasswordError').textContent=SB.ruError(err);b.disabled=false;}
+    };
+  }
+  return true;
+}
+
 async function refreshProfile(){if(!SB)return;try{const p=await SB.profile();if(!p||p.status==='blocked'){if(p)await SB.logout();current=null;walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();return}current={id:p.id,username:p.username,role:p.role,moderator_level:Number(p.moderator_level||0)};await refreshWallet()}catch(e){console.error(e)}}
 async function refreshWallet(){if(!SB||!current)return;try{const w=await SB.wallet();walletBal=w.available;walletReserved=w.reserved;walletEscrow=w.escrow||0}catch(e){console.error(e)}refreshHeader()}
 async function sbAuth(signup,username,password,confirm,err){err.textContent='';const btn=document.querySelector('#authForm button[type=submit]');btn.disabled=true;try{if(signup){if(!/^[a-zA-Z0-9_]{3,24}$/.test(username))throw new Error('Логин: 3–24 символа, латиница, цифры и _');if(password.length<6)throw new Error('Пароль должен быть не короче 6 символов.');if(password!==confirm)throw new Error('Пароли не совпадают');await SB.register(username,password)}await SB.login(username,password);await refreshProfile();if(!current)throw new Error('Не удалось войти. Если аккаунт только что создан, отключи подтверждение email в настройках Supabase Auth.');closeModal();notify(signup?'Аккаунт создан. Добро пожаловать!':'Вход выполнен');if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()}catch(e){err.textContent=SB.ruError(e);btn.disabled=false}}
-window.onTelegramAuth=async function(authData){
-  try{
-    if(authData?.error)throw new Error(String(authData.error));
-    const idToken=String(authData?.id_token||'');
-    if(!idToken)throw new Error('Telegram не вернул подтверждённый ID token. Проверь Client ID в BotFather.');
-    if(!SB)throw new Error('Telegram-вход доступен только при подключённом Supabase.');
-    const result=await SB.telegramLogin(idToken);
-    await refreshProfile();
-    if(!current)throw new Error('Не удалось получить профиль Telegram.');
-    closeModal();
-    notify(result.is_new?'Аккаунт через Telegram создан!':'Вход через Telegram выполнен');
-    if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady();
-    if(result.is_new){
-      modal('Задай пароль',`<p class="modal-lead">Аккаунт создан через Telegram. Придумай пароль, чтобы можно было входить и по логину.</p><form id="telegramPasswordForm" class="modal-form"><label>Новый пароль<input name="password" type="password" minlength="6" required></label><label>Повтори пароль<input name="confirm" type="password" minlength="6" required></label><p class="form-error" id="telegramPasswordError"></p><button class="primary-action">Сохранить пароль</button></form>`);
-      $('#telegramPasswordForm').onsubmit=async e=>{
-        e.preventDefault();
-        const f=e.currentTarget;
-        if(f.elements.password.value!==f.elements.confirm.value){$('#telegramPasswordError').textContent='Пароли не совпадают.';return}
-        const b=f.querySelector('button');b.disabled=true;
-        try{const {error}=await SB.client.auth.updateUser({password:f.elements.password.value});if(error)throw error;modal('Готово','<p class="modal-lead">Теперь можно входить через Telegram или логин и пароль.</p>')}
-        catch(err){$('#telegramPasswordError').textContent=SB.ruError(err);b.disabled=false}
-      };
-    }
-  }catch(e){notify(SB?.ruError?SB.ruError(e):String(e.message||e));const telegramButton=document.querySelector('.tg-auth-button');if(telegramButton){telegramButton.disabled=false;telegramButton.textContent='Повторить вход через Telegram';}}
-};
+
 function setCurrent(user){current={id:user.id,username:user.username,role:user.role};write(SESSION,current);refreshHeader()}
 const BANKS=['Сбербанк','Т-Банк','ВТБ','Альфа-Банк','Газпромбанк','ПСБ','Совкомбанк','Россельхозбанк','Московский кредитный банк','Банк Санкт-Петербург','ОТП Банк','МТС Банк','Уралсиб','Почта Банк','Яндекс Банк','Банк ДОМ.РФ','Райффайзенбанк','ЮниКредит Банк','АК БАРС','Русский Стандарт','Озон Банк','Другой банк'];
 const walletKey='klb_wallets',depositKey='klb_deposits',withdrawKey='klb_withdrawals',walletSettingsKey='klb_wallet_settings';
@@ -240,5 +241,8 @@ grid.addEventListener('click', e => {
 });
 $('#favoritesBtn').onclick=()=>ensureLogin(showFavorites);$('#loginBtn').onclick=()=>current?profileMenu():authDialog('login');if($('#chatsBtn'))$('#chatsBtn').onclick=()=>openChats();$('#sellerBtn').onclick=sellerApply;refreshHeader();render();
 async function loadCatalog(){if(!SB)return;try{products=(await SB.catalog()).map(p=>({id:p.id,title:p.title,desc:p.description||'Цифровой товар',price:Number(p.price)||0,category:p.category||'other',symbol:'✦',label:'KLB',seller:p.seller,image:p.image_url||''}))}catch(e){console.error(e);notify('Не удалось загрузить каталог')}render()}
-if(SB)refreshProfile().then(()=>{refreshHeader();return loadCatalog()}).then(()=>{if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()});
+const telegramCallbackParams=new URLSearchParams(location.search);
+if(telegramCallbackParams.has('code')||telegramCallbackParams.has('error')){
+  handleTelegramOidcCallback().catch(error=>{console.error('KLB Telegram OIDC callback:',error);notify(SB?.ruError?SB.ruError(error):String(error.message||error));refreshProfile().then(refreshHeader);});
+}else if(SB)refreshProfile().then(()=>{refreshHeader();return loadCatalog()}).then(()=>{if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()});
 })();
