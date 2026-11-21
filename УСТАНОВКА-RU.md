@@ -1,75 +1,104 @@
-# KLB STORE — обновление профиля, модераторов и Telegram
+# KLB STORE — Telegram Login OIDC и уведомления
 
-## Перед началом
+## Что изменено в этой сборке
 
-- Сделай резервную копию проекта Supabase.
-- Токен Telegram-бота был опубликован в переписке. Считай его скомпрометированным: открой @BotFather, выбери бота и выполни `/revoke`. Новый токен не добавляй в JavaScript, HTML, GitHub Pages или `supabase-config.js`.
-- Новая миграция рассчитана на уже установленную версию KLB STORE с кошельком, `marketplace-escrow-chat.sql` и `marketplace-trust-safety.sql`.
+- Вход/быстрая регистрация через новый Telegram Login OIDC widget (`oauth.telegram.org/js/telegram-login.js?6`).
+- Backend проверяет подпись Telegram ID token по официальному JWKS, issuer и audience. Данные `user`, пришедшие отдельно из браузера, не используются как доказательство личности.
+- Telegram HTTP Bot API token остаётся только на сервере и используется webhook/уведомлениями продавцам.
+- Вход в Telegram больше не проверяется старым способом `hash` legacy widget.
 
-## 1. Обновить базу Supabase
+## 1. Безопасность токена
 
-В Supabase → SQL Editor → New query вставь и запусти файл `klb-account-staff-telegram.sql`.
+Токен Bot API был опубликован в чате. Не добавляй его в HTML, JavaScript, `supabase-config.js`, SQL или GitHub. Поскольку токен передавался в переписке, безопаснее один раз перевыпустить его ещё раз через @BotFather (`/revoke`) и использовать только новый токен в Supabase Secrets.
 
-Не запускай повторно предыдущие миграции только ради этого обновления. Эта миграция добавляет поля и таблицы для уровней модераторов, присутствия, журнала действий, Telegram-привязки и промокодов. Она не удаляет пользователей, балансы, объявления, чаты или заказы.
+## 2. Настройки Telegram Login в BotFather
 
-Владелец панели определяется по UUID `aaa71905-fc0d-4e72-9202-482141757e28`.
+1. Открой @BotFather и выбери нужного бота.
+2. Открой **Login Widget**.
+3. Добавь Allowed URL для сайта. Для GitHub Pages это origin вида `https://USERNAME.github.io`; для собственного домена — `https://your-domain.example`. Указывай реальные origins, на которых опубликован сайт.
+4. Скопируй числовой **Client ID** из раздела Login Widget.
 
-## 2. Обновить сайт
+Важно: `data-client-id` — это только числовой Client ID. Нельзя вставлять туда HTTP Bot API token вида `число:секрет`. В текущем `supabase-config.js` временно указано `9095406427` — сверь его с Client ID, который показывает BotFather, и при необходимости замени.
 
-1. Распакуй архив.
-2. Загрузи содержимое папки `klb_full` в корень репозитория GitHub Pages, заменив одноимённые файлы.
-3. Сохрани правильные `url` и `anonKey` из действующего `supabase-config.js`.
-4. В `supabase-config.js` укажи публичный username бота без `@`:
+## 3. Настройка frontend-конфига
+
+В `supabase-config.js` сохрани действующие `url` и `anonKey` и заполни два Telegram-поля:
 
 ```js
-telegramBotUsername: 'YourBotUsername'
+telegramClientId: '9095406427',       // числовой Client ID из BotFather → Login Widget
+telegramBotUsername: 'KLBSTOREBOT_bot' // публичный username бота без @
 ```
 
-Не указывай здесь токен бота или `service_role` / secret key.
+В этой сборке кнопка авторизации уже встроена в окно входа. Она загружает `https://oauth.telegram.org/js/telegram-login.js?6` и вызывает официальный JS API `Telegram.Login.init()` / `Telegram.Login.open()` с OIDC scope `profile` и `write`. Не вставляй отдельный `<script data-onauth=...>` в HTML и не создавай вторую кнопку: это приведёт к дублированию. Callback получает подписанный `id_token`, который проверяется Edge Function `telegram-auth`.
 
-## 3. Настроить Telegram
+`Client Secret` не нужен для этого JS Login SDK — он нужен для отдельного OIDC Authorization Code Flow. Не помещай его в `supabase-config.js`, HTML, JavaScript или SQL. Серверная функция проверяет подписанный `id_token` по Telegram JWKS и `aud`.
 
-1. В @BotFather выполни `/revoke` и получи новый токен.
-2. В @BotFather выполни `/setdomain` и укажи точный домен сайта (например, `username.github.io`).
-3. В Supabase Dashboard → Edge Functions → Secrets добавь:
-   - `TELEGRAM_BOT_TOKEN` — новый токен;
-   - `TELEGRAM_WEBHOOK_SECRET` — случайную длинную строку от 32 символов;
-   - `SITE_URL` — полный URL сайта, включая путь репозитория, если он есть, например `https://username.github.io/klbstore/`.
-4. Из корня репозитория, связанного с правильным проектом Supabase, выполни:
+`telegramBotUsername` нужен для deep-link привязки Telegram к профилю продавца (`https://t.me/BOT_USERNAME?start=...`). Это не username канала KLB Store, если канал и бот имеют разные имена.
+
+## 4. Edge Function Secrets в Supabase
+
+Открой Supabase Dashboard → Edge Functions → Secrets и добавь:
+
+- `TELEGRAM_BOT_TOKEN` — новый HTTP Bot API token после `/revoke`;
+- `TELEGRAM_CLIENT_ID` — тот же числовой Client ID из BotFather → Login Widget; он должен совпадать с `telegramClientId` в `supabase-config.js`;
+- `TELEGRAM_WEBHOOK_SECRET` — случайная длинная строка не короче 32 символов;
+- `SITE_URL` — полный публичный URL сайта, включая путь GitHub Pages, например `https://USERNAME.github.io/klbstore/`.
+
+Не добавляй Bot API token в `supabase-config.js` и не коммить секреты в репозиторий. Supabase Edge Functions читают secrets из окружения. Документация: https://supabase.com/docs/guides/functions/secrets
+
+## 5. Развертывание Edge Functions
+
+Из корня репозитория, привязанного к правильному Supabase project, выполни:
 
 ```bash
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
 supabase functions deploy telegram-auth --no-verify-jwt
 supabase functions deploy telegram-webhook --no-verify-jwt
 supabase functions deploy telegram-order-notify
 supabase functions deploy klb-profile-username
 ```
 
-5. Установи webhook через Telegram Bot API `setWebhook` на URL:
+`telegram-auth` принимает OIDC `id_token`, проверяет его подпись через `https://oauth.telegram.org/.well-known/jwks.json` и проверяет `iss`/`aud`. Для него нужен `TELEGRAM_CLIENT_ID`; Bot API token нужен другим Telegram-функциям.
+
+## 6. Установка webhook бота
+
+Webhook URL:
 
 `https://YOUR_PROJECT_REF.supabase.co/functions/v1/telegram-webhook`
 
-Передай `TELEGRAM_WEBHOOK_SECRET` в заголовке/параметре `secret_token`. Используй секретный терминал или менеджер секретов; не помещай значения в репозиторий и не отправляй их в чат.
+Установи webhook через Telegram Bot API `setWebhook`. Используй терминал и переменные окружения, чтобы не вставлять секреты в команду, которую сохраняет история оболочки:
 
-## 4. Как пользоваться
+```bash
+curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -H 'Content-Type: application/json' \
+  -d "{\"url\":\"https://YOUR_PROJECT_REF.supabase.co/functions/v1/telegram-webhook\",\"secret_token\":\"${TELEGRAM_WEBHOOK_SECRET}\"}"
+```
 
-- Вход через Telegram появится на форме входа после настройки `telegramBotUsername` и `/setdomain`. Новому пользователю присваивается технический ник `tg...`; его можно поменять в профиле.
-- Для уведомлений о покупках продавцу нужно открыть свой профиль → «Привязать Telegram» → открыть бота → нажать Start. Одного Telegram Login недостаточно для доставки личных сообщений от бота.
-- После покупки продавец получает уведомление с кнопкой «Ответить в чате».
-- В профиле можно менять ник и логин. Серверная функция меняет и `profiles.username`, и технический email Supabase Auth. Следующий вход по паролю выполняется с новым ником.
-- Владелец видит «Модераторы», может назначить уровень 1 или 2 по нику либо снять права. Уровень 1 видит только жалобы; уровень 2 — жалобы и управление промокодами.
-- Присутствие обновляется в админке каждые 30 секунд; статус «в сети» означает heartbeat за последние 2 минуты. Журнал показывает решения по жалобам/спорам, назначения модераторов и операции с промокодами.
-- Промокоды можно создавать и включать/отключать. Применение/списание промокода на этапе оплаты в эту итерацию не входит.
-- Ссылка на Telegram-канал `https://t.me/klbstorenews` добавлена в навигацию и футер.
+Убедись, что ответ содержит `"ok":true`.
 
-## 5. Проверка
+## 7. Привязка Telegram для уведомлений продавцу
 
-Используй два тестовых аккаунта:
+1. Войди на сайт обычным способом или через Telegram Login.
+2. Открой Профиль → **Привязать Telegram**.
+3. Нажми кнопку перехода к боту и затем **Start** в Telegram.
+4. После успешной привязки webhook подтвердит подключение.
+5. Проведи тестовую покупку. Если продавец привязал Telegram и нажал Start, ему придёт уведомление с кнопкой **Ответить в чате**.
 
-1. Войти по логину и через Telegram.
-2. Поменять ник, выйти и проверить вход по новому нику.
-3. Привязать Telegram продавца и нажать Start.
-4. Совершить небольшую тестовую покупку и проверить уведомление с кнопкой перехода в нужный чат.
-5. Назначить тестового модератора уровня 1 и проверить, что он видит только жалобы.
-6. Назначить модератора уровня 2 и проверить доступ к промокодам.
+Сам по себе Telegram Login не создаёт личный чат с ботом. Для доставки личных уведомлений продавец должен открыть бота и нажать Start.
 
-JavaScript проверен на синтаксис. Edge Function TypeScript проверен статически с минимальными объявлениями Deno/Supabase; реальное выполнение SQL, деплой функций и доставка Telegram-сообщений требуют проверки в твоём проекте Supabase.
+## 8. Проверка
+
+Проверь на тестовых аккаунтах:
+
+1. Вход и создание аккаунта Telegram Login.
+2. Вход по обычному логину и паролю для ранее созданного пользователя.
+3. Смена ника и вход с новым ником.
+4. Привязка Telegram из профиля и подтверждение через `/start`.
+5. Тестовая покупка и получение продавцом Telegram-сообщения с корректной ссылкой на чат.
+
+Если кнопка Telegram не появляется, проверь, что `telegramClientId` — числовой Client ID из BotFather. Если popup не завершается, проверь Allowed URLs в Login Widget. Если Telegram Login проходит, но продавцу не приходят сообщения, проверь `TELEGRAM_BOT_TOKEN`, webhook и то, что продавец нажал Start.
+
+## Важно о готовности
+
+Файлы фронтенда и Edge Function подготовлены. Реальное подключение к BotFather/Supabase невозможно завершить одним ZIP: нужно вручную сохранить secrets, разрешить сайт в BotFather, развернуть Edge Functions и настроить webhook в собственном проекте.

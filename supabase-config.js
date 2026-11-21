@@ -3,6 +3,8 @@
 window.KLB_SUPABASE_CONFIG = {
   url: 'https://hzgihkdvaswhdygnhmra.supabase.co',
   anonKey: 'sb_publishable_6yKXKZXQvwlEJGlq1jx3aw_f-e0Sx4G',
-  // Public Telegram bot username (NOT the bot token). Fill after rotating the leaked token in BotFather.
-  telegramBotUsername: 'YOUR_BOT_USERNAME'
+  // Telegram Login OIDC Client ID from BotFather → Login Widget (numeric; never paste the bot API token here).
+  telegramClientId: '9095406427',
+  // Public bot username without @, used for the /start linking deep-link. Fill in from BotFather.
+  telegramBotUsername: 'KLBSTOREBOT_bot'
 };

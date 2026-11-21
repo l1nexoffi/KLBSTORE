@@ -1,85 +1,48 @@
-# KLB STORE — account, moderator and Telegram update
+# KLB STORE — Account, Staff & Telegram update
 
-## Important token safety
+This archive contains the storefront/admin frontend, the additive SQL migration, and four Supabase Edge Functions. The Telegram authentication endpoint now uses Telegram's current OpenID Connect Login Widget. It validates the signed ID token against Telegram JWKS and checks issuer + audience. It no longer expects the legacy widget's `{ id, auth_date, hash }` payload.
 
-A Telegram bot token was exposed in chat. Treat it as compromised: open **@BotFather**, select the bot, use `/revoke` to invalidate the old token, then create/store the replacement only as the Supabase Edge Function secret `TELEGRAM_BOT_TOKEN`. Do not reuse the exposed token. Never put a bot token, `service_role` key or webhook secret in `supabase-config.js`, GitHub Pages or frontend JavaScript.
+## Telegram credentials are not interchangeable
 
-## 1. Apply the database migration
+- `TELEGRAM_BOT_TOKEN` is the secret HTTP Bot API token. Store it only in Supabase Edge Function Secrets. It is used for Telegram webhook and sending notifications.
+- `TELEGRAM_CLIENT_ID` is the numeric Client ID shown in BotFather → Login Widget. It is used by `telegram-auth` to verify the ID token audience.
+- `telegramClientId` in the public `supabase-config.js` is the same numeric Client ID. Never put an HTTP Bot API token in this field.
+- `telegramBotUsername` in the public config is the public bot username without `@`, used only to build `/start` deep links.
 
-This migration is additive. Run `klb-account-staff-telegram.sql` after the existing KLB auth, wallet, escrow/chat and trust/safety migrations. Do not rerun unrelated migrations just for this update.
+The token was shared in the conversation. Rotate it with @BotFather `/revoke` before using it in production, then set the replacement as `TELEGRAM_BOT_TOKEN` in Supabase Secrets. Never commit it.
 
-The creator UUID is pinned in the SQL migration to `aaa71905-fc0d-4e72-9202-482141757e28`. The **Moderators** page is visible only to this account. Level 1 moderators can access Reports only; Level 2 can access Reports and Promo codes. Promo-code administration is included; applying/redeeming those codes at checkout is a separate feature and is not enabled by this migration.
+## Required Supabase Edge Function Secrets
 
-## 2. Configure Telegram bot identity
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CLIENT_ID`
+- `TELEGRAM_WEBHOOK_SECRET`
+- `SITE_URL`
 
-After creating/rotating the bot token with @BotFather, set its public username (without `@`) in `supabase-config.js`:
+Current Supabase provides `SUPABASE_SECRET_KEYS` and `SUPABASE_PUBLISHABLE_KEYS`; the shared key helper also accepts legacy `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_ANON_KEY`.
 
-```js
-telegramBotUsername: 'YourNewBotUsername'
-```
+## BotFather setup
 
-In @BotFather, use `/setdomain` and enter the exact public website domain (for example `store.example.com`). The Telegram Login Widget works only on a domain configured for the bot.
+Open the bot's Login Widget settings and add every site origin to Allowed URLs. Copy the numeric Client ID from there. The current frontend config uses Client ID `9095406427`, copied from the generated Telegram Login snippet you supplied. Confirm that this exactly matches the Client ID shown in BotFather. Set the actual public bot username in `telegramBotUsername`.
 
-## 3. Configure Supabase Edge Function secrets
-
-In Supabase Dashboard → Edge Functions → Secrets, set:
-
-- `TELEGRAM_BOT_TOKEN` — the newly rotated bot token.
-- `TELEGRAM_WEBHOOK_SECRET` — a long random secret (32+ random characters).
-- `SITE_URL` — full website URL, e.g. `https://yourname.github.io/klbstore/`.
-
-`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS` are provided by current Supabase Edge Function runtimes. The functions also support legacy `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` variables. The shared key helper accepts either format. Never expose a secret/service-role key in frontend files.
-
-## 4. Deploy Edge Functions
-
-From the repository root, with Supabase CLI linked to the correct project:
+## Deploy
 
 ```bash
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
 supabase functions deploy telegram-auth --no-verify-jwt
 supabase functions deploy telegram-webhook --no-verify-jwt
 supabase functions deploy telegram-order-notify
 supabase functions deploy klb-profile-username
 ```
 
-`supabase/config.toml` already contains the expected JWT settings.
+Set the webhook on `https://YOUR_PROJECT_REF.supabase.co/functions/v1/telegram-webhook` using `setWebhook` with `TELEGRAM_WEBHOOK_SECRET` as `secret_token`. Use shell environment variables or a secrets manager; do not put token values in source files or command history.
 
-## 5. Set Telegram webhook
+## Seller Telegram linking
 
-After deploying `telegram-webhook`, set the webhook URL to:
+A seller must use Profile → Привязать Telegram, open the bot link and press Start. Telegram Login does not by itself grant the bot a private message chat. Once linked, successful purchases trigger `telegram-order-notify` and send the seller a message with an **Ответить в чате** deep link.
 
-`https://YOUR_PROJECT_REF.supabase.co/functions/v1/telegram-webhook`
+See `УСТАНОВКА-RU.md` for the step-by-step Russian setup guide.
 
-Use Telegram Bot API `setWebhook` with `secret_token` equal to `TELEGRAM_WEBHOOK_SECRET`. Do this in a secure terminal or secret manager. Do not paste the token or webhook secret into public issues, repository files or this chat. Example command template (fill variables from your secure environment):
+## Client Secret и JS Login SDK
 
-```bash
-curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -H 'Content-Type: application/json' \
-  -d "{\"url\":\"https://YOUR_PROJECT_REF.supabase.co/functions/v1/telegram-webhook\",\"secret_token\":\"${TELEGRAM_WEBHOOK_SECRET}\"}"
-```
-
-## 6. Test Telegram linking and notifications
-
-1. Sign in to KLB STORE.
-2. Open Profile → **Привязать Telegram**.
-3. Open the bot link and press Start. This step is necessary for the bot to obtain the private chat ID and send order notifications.
-4. Have a second test account buy a low-value test listing.
-5. Confirm the seller receives a Telegram notification with **Ответить в чате**. The link opens `?chat=<chat-id>`; if the seller is logged out, after signing in the site opens that chat.
-6. Test Telegram Login Widget after the bot username and domain are configured.
-
-## 7. Test account and moderators
-
-- The creator account can assign Level 1/Level 2 moderators and revoke access in Admin → Moderators.
-- Presence is refreshed every 30 seconds; online means a heartbeat within the last 2 minutes.
-- The activity log records moderator assignments, report/dispute decisions and Level 2 promo-code actions. It does not record every ordinary page view.
-- Username change updates both `profiles.username` and Supabase Auth's synthetic email; the next password login uses the new username.
-
-## 8. Upload frontend
-
-Replace the site files from `klb_full/` on your hosting. Preserve your actual `supabase-config.js`; do not overwrite it with `supabase-config.example.js`. Ensure your actual Supabase project URL and publishable/anon key remain in the config. Set only the public bot username there — never the token.
-
-## Notes
-
-- Telegram login and seller notifications cannot work until the Edge Functions are deployed and secrets/webhook are configured.
-- Telegram seller notifications require that the seller has linked Telegram and pressed Start with the bot.
-- The admin-only moderator roster is scoped to the creator UUID in the migration.
-- Promo-code creation/enable/disable is ready for Level 2, but checkout redemption is not part of this update.
+Текущая кнопка сайта использует `Telegram.Login.init()` / `Telegram.Login.open()` и получает подписанный `id_token`. Для этого сценария Client Secret в браузере и в Edge Function не нужен: сервер проверяет подпись JWT через Telegram JWKS и сверяет `iss`, `aud` и срок действия. Client Secret применяется в альтернативном OIDC Authorization Code Flow при обмене `code` на token. Не добавляйте Client Secret в публичные файлы сайта.

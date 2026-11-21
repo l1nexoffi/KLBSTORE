@@ -251,8 +251,9 @@
     async createTelegramLinkCode() {
       return must(await sb.rpc('klb_create_telegram_link_code'));
     },
-    async telegramLogin(widgetUser) {
-      const { data, error } = await sb.functions.invoke('telegram-auth', { body: widgetUser });
+    async telegramLogin(idToken) {
+      if (typeof idToken !== 'string' || idToken.split('.').length !== 3) throw new Error('Некорректный Telegram ID token.');
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { id_token: idToken } });
       if (error) throw error;
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;

@@ -113,3 +113,13 @@ body{animation:klbRise .45s ease both}
 .telegram-connect-link{display:block;text-align:center;text-decoration:none}
 @media(max-width:650px){.telegram-channel-link{display:none}.profile-username-form{grid-template-columns:1fr}.profile-username-form button{width:100%}.funpay-chat-modal{padding:15px!important}.funpay-chat-head{align-items:flex-start}.funpay-chat-price{font-size:17px}.funpay-chat-shell .chat-messages{min-height:180px;max-height:42vh}.funpay-chat-shell .chat-message{max-width:90%}}
 @media(prefers-reduced-motion:reduce){body{animation:none!important}*,*:before,*:after{animation:none!important;transition:none!important}}
+
+
+/* Telegram OIDC sign-in button */
+.telegram-login-divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:#7f8da3;font-size:12px}
+.telegram-login-divider::before,.telegram-login-divider::after{content:"";height:1px;flex:1;background:#263348}
+.telegram-login-mount{display:flex;justify-content:center;min-height:44px;margin:8px 0 2px;position:relative}
+.tg-auth-button{border:1px solid #2b9eea;border-radius:12px;padding:12px 20px;background:linear-gradient(135deg,#2099e8,#1678c9);color:#fff;font:700 14px/1.2 inherit;cursor:pointer;box-shadow:0 8px 24px #1688ce30;transition:transform .18s ease,filter .18s ease,box-shadow .18s ease}
+.tg-auth-button:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 10px 28px #1688ce40}
+.tg-auth-button:active{transform:translateY(0)}
+.telegram-login-error{display:block;color:#ff9aa5;font-size:12px;text-align:center;margin:8px 0}
