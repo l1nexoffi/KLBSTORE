@@ -71,10 +71,11 @@ html,body{max-width:100%;overflow-x:hidden}
 
 /* KLB STORE account, chat and motion refresh */
 html{scroll-behavior:smooth}
+@keyframes klbFadeIn{from{opacity:.65}to{opacity:1}}
 @keyframes klbRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes klbGlow{0%,100%{box-shadow:0 0 0 rgba(43,132,255,0)}50%{box-shadow:0 0 26px rgba(43,132,255,.12)}}
 @keyframes klbPulse{0%,100%{opacity:.65;transform:scale(.98)}50%{opacity:1;transform:scale(1)}}
-body{animation:klbRise .45s ease both}
+body{animation:klbFadeIn .32s ease both}
 .product-card,.category,.seller-panel,.stat-card,.panel,.chat-list-item{transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease}
 .product-card:hover{transform:translateY(-5px);box-shadow:0 18px 38px #0005;border-color:#315b91}
 .category:hover,.chat-list-item:hover{transform:translateY(-2px)}
@@ -123,3 +124,168 @@ body{animation:klbRise .45s ease both}
 .tg-auth-button:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 10px 28px #1688ce40}
 .tg-auth-button:active{transform:translateY(0)}
 .telegram-login-error{display:block;color:#ff9aa5;font-size:12px;text-align:center;margin:8px 0}
+
+
+/* ==========================================================
+   KLB STORE — MOBILE / SMALL SCREEN REPAIR (iOS + Android)
+   Fixes fixed modal positioning: the body must NOT be transformed.
+   ========================================================== */
+:root{--klb-vh:100dvh;--klb-vv-top:0px}
+html.klb-modal-open,body.klb-modal-open{overflow:hidden!important;overscroll-behavior:none}
+#appModal.open{
+  position:fixed!important;
+  top:var(--klb-vv-top,0px)!important;
+  left:0!important;right:0!important;bottom:auto!important;
+  width:100%!important;
+  height:var(--klb-vh,100dvh)!important;
+  max-height:var(--klb-vh,100dvh)!important;
+  z-index:10000!important;
+  display:flex!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  padding: max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom))!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+}
+#appModal .app-modal{
+  flex:0 1 auto;
+  width:min(100%,560px);
+  max-height:calc(var(--klb-vh,100dvh) - 28px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  margin-block:auto;
+  margin-inline:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  scroll-padding-block:18px;
+}
+#appModal .modal-backdrop{position:fixed;inset:0}
+#appModal .modal-form input,#appModal .modal-form select,#appModal .modal-form textarea{font-size:16px;min-width:0}
+#appModal .modal-form button,#appModal .profile-menu button{min-height:44px}
+#appModal .modal-x{width:40px;height:40px;min-width:40px;min-height:40px}
+
+@media(max-width:700px){
+  .topbar{height:62px;padding:0 12px;gap:8px}
+  .topbar>.brand{min-width:0;gap:7px;flex:0 1 auto}
+  .brand-icon{width:30px;height:30px;flex:0 0 30px;font-size:21px}
+  .brand-name{font-size:17px;letter-spacing:.6px;white-space:nowrap}
+  .brand-name span{margin-left:2px;letter-spacing:1px}
+  .main-nav{display:none}
+  .top-actions{min-width:0;flex:0 0 auto;margin-left:auto;gap:5px}
+  .favorite-head{width:35px;height:36px;flex:0 0 35px;font-size:20px;border-radius:9px}
+  .favorite-head span{font-size:9px;right:3px;top:2px}
+  .chats-head{height:36px;min-width:36px;width:36px;padding:0;border-radius:9px;font-size:0;display:inline-grid;place-items:center}
+  .chats-head::before{content:"✉";font-size:17px;line-height:1}
+  .balance-head{height:36px;min-width:54px;padding:0 7px;display:flex;align-items:center;justify-content:center;gap:0;border-radius:9px}
+  .balance-head span{display:none}
+  .balance-head b{font-size:10px;white-space:nowrap}
+  .login-btn{height:36px;min-width:38px;max-width:92px;padding:0 8px;font-size:11px;border-radius:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #loginBtn .user-pill{gap:0;font-size:0}
+  #loginBtn .user-pill>span:not(.user-avatar){display:none}
+  #loginBtn .user-avatar{width:28px;height:28px;font-size:12px}
+  main{padding-left:14px;padding-right:14px}
+  .hero{grid-template-columns:minmax(0,1fr);gap:6px;padding:32px 0 18px;min-height:0}
+  .hero h1{font-size:clamp(38px,10.5vw,47px);line-height:.94;letter-spacing:-1.25px;margin:17px 0}
+  .hero p{font-size:13px;line-height:1.65;max-width:36ch}
+  .hero-cta{min-height:46px;padding:12px 15px;gap:18px}
+  .hero-foot{display:flex;flex-wrap:wrap;gap:12px 18px;margin-top:22px}
+  .hero-foot span{font-size:9px}
+  .hero-foot b{font-size:17px}
+  .hero-visual{height:225px;margin:2px 0 0}
+  .visual-logo{width:140px;height:140px;border-radius:28px}
+  .visual-logo span{font-size:62px}
+  .orbit-a{width:min(88vw,330px);height:135px}
+  .orbit-b{width:min(72vw,260px);height:105px}
+  .chip-a{right:3%;top:12px}
+  .chip-b{left:2%;bottom:10px}
+  .category-area,.catalog{padding:22px 0 30px}
+  .section-title h2,.catalog-header h2{font-size:22px}
+  .catalog-header{align-items:stretch;gap:12px}
+  .catalog-controls{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(112px,auto);gap:7px}
+  .search-box{min-width:0;width:100%;height:42px}
+  .search-box input{width:100%;min-width:0;font-size:13px}
+  .catalog-controls select{width:100%;max-width:none;min-width:0;height:42px;font-size:11px;padding:0 8px}
+  .product-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .product-card{min-width:0;border-radius:13px}
+  .product-image{height:clamp(100px,31vw,145px)}
+  .product-info{padding:10px}
+  .product-info h3{font-size:12px;line-height:1.35;overflow-wrap:anywhere}
+  .product-info p{font-size:10px;line-height:1.45;min-height:28px;margin:7px 0 11px;overflow-wrap:anywhere}
+  .product-bottom{flex-wrap:wrap;gap:7px}
+  .price{font-size:20px}
+  .buy-button{padding:8px 9px;font-size:10px;min-height:36px}
+  .heart-button{min-width:34px;min-height:34px}
+  .product-seller{font-size:10px;overflow-wrap:anywhere}
+  .seller-section{padding:18px 0 34px}
+  .seller-panel{grid-template-columns:minmax(0,1fr);gap:10px;padding:24px 18px;border-radius:17px}
+  .seller-text h2{font-size:clamp(35px,9vw,43px)}
+  .seller-text p{font-size:12px}
+  .seller-art{height:150px;min-width:0}
+  .seller-monogram{width:105px;height:105px;font-size:74px}
+  .seller-orbit{width:min(70vw,230px);height:100px}
+  footer{padding:18px 14px 26px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-size:10px}
+  footer>*{min-width:0}
+  footer .footer-brand{flex:1 0 45%}
+  footer>span{flex:1 0 40%}
+  footer>span:last-of-type{display:none}
+  .toast{bottom:calc(14px + env(safe-area-inset-bottom));width:max-content;max-width:calc(100% - 24px);font-size:12px}
+  .chat-list-item{padding:11px;gap:8px}
+  .chat-list-main{min-width:0}
+  .chat-last-message{max-width:min(52vw,190px)}
+  .funpay-chat-modal{width:100%!important;max-width:100%!important;padding:16px!important}
+  .funpay-chat-shell .chat-messages{min-height:190px;max-height:calc(var(--klb-vh,100dvh) * .38)}
+  .funpay-chat-shell .chat-send-form{grid-template-columns:minmax(0,1fr) auto;align-items:end}
+  .funpay-chat-shell .chat-send-form textarea{min-height:44px;font-size:16px}
+  .funpay-chat-shell .chat-send-form button{min-width:78px;width:auto;min-height:44px}
+  .profile-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .profile-stats div{padding:9px 5px}
+  .profile-stats b{font-size:16px}
+  .profile-stats span{font-size:10px;line-height:1.25}
+}
+@media(max-width:420px){
+  .topbar{padding:0 9px;gap:5px}
+  .brand-name{font-size:15px}
+  .top-actions{gap:4px}
+  .favorite-head{width:32px;flex-basis:32px}
+  .chats-head{width:33px;min-width:33px}
+  .balance-head{min-width:48px;padding:0 5px}
+  .login-btn{min-width:35px;padding:0 6px}
+  .hero h1{font-size:clamp(35px,10vw,42px)}
+  .hero-foot{gap:10px 14px}
+  .category-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .product-grid{gap:8px}
+  .product-info{padding:9px}
+  .buy-button{font-size:9px;padding:7px 8px}
+  .app-modal{padding:20px 15px!important}
+}
+@media(max-width:360px){
+  .brand-name{font-size:14px}
+  .balance-head{display:none!important}
+  .hero h1{font-size:35px}
+  .product-grid{grid-template-columns:minmax(0,1fr)}
+  .product-image{height:150px}
+  .catalog-controls{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-height:720px){
+  #appModal.open{align-items:flex-start!important;padding-top:max(10px,env(safe-area-inset-top))!important}
+  #appModal .app-modal{margin:0 auto!important;max-height:calc(var(--klb-vh,100dvh) - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+}
+@media(hover:none){
+  .product-card:hover,.category:hover,.chat-list-item:hover{transform:none;box-shadow:none}
+  .primary-action:hover,.buy-button:hover{filter:none;box-shadow:none}
+}
+@media(prefers-reduced-motion:reduce){body{animation:none!important}}
+
+/* Customer promo-code activation */
+.profile-promo-card{display:grid;gap:10px;padding:16px;border:1px solid #294766;border-radius:14px;background:linear-gradient(125deg,#10233b,#101a29 72%)}
+.profile-promo-card p{margin:5px 0 0;color:#9fb0c5;font-size:13px;line-height:1.5}
+.profile-promo-active{padding:10px 12px;border:1px solid #276d55;border-radius:10px;background:#102b25;color:#a9efd0;font-size:13px}
+.profile-promo-inactive{color:#93a5bc;font-size:13px}
+.profile-promo-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.profile-promo-actions .secondary-action{margin:0}
+.checkout-promo-applied{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid #276d55;border-radius:11px;background:#102b25;color:#b4efd4;font-size:13px}
+.checkout-promo-applied span{font-weight:800;white-space:nowrap}
+@media(max-width:560px){.profile-promo-actions{display:grid;grid-template-columns:1fr}.checkout-promo-applied{align-items:flex-start;flex-direction:column}}

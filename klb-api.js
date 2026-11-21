@@ -48,7 +48,15 @@
     'Moderator only': 'Недостаточно прав модератора.',
     'Invalid login credentials': 'Неверный логин или пароль.',
     'User already registered': 'Этот логин уже занят.',
-    'Failed to fetch': 'Нет соединения с сервером.'
+    'Failed to fetch': 'Нет соединения с сервером.',
+    'Promo code not found or inactive': 'Промокод не найден или отключён.',
+    'Promo code expired': 'Срок действия промокода истёк.',
+    'Promo code usage limit reached': 'Лимит активаций этого промокода исчерпан.',
+    'Promo code already used by this account': 'Ты уже использовал этот промокод.',
+    'No active promo code': 'Нет активированного промокода.',
+    'Promo discount exceeds order total': 'Скидка промокода превышает стоимость заказа.',
+    'Promo percentage must be below 100': 'Скидка в процентах должна быть меньше 100%.',
+    'Promo code already active': 'Этот промокод уже активирован.'
   };
   const ruError = e => {
     const m = String((e && (e.message || e.error_description)) || e || '');
@@ -99,6 +107,17 @@
     },
     async myDeposits() { return must(await sb.from('deposit_requests').select('*').order('created_at', { ascending: false }).limit(50)); },
     async myWithdrawals() { return must(await sb.from('withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(50)); },
+
+    /* ---------- customer promo activation ---------- */
+    async activateMarketplacePromo(code) {
+      return must(await sb.rpc('klb_activate_marketplace_promo', { p_code: String(code || '').trim().toUpperCase() }));
+    },
+    async myActiveMarketplacePromo() {
+      return must(await sb.rpc('klb_my_active_marketplace_promo'));
+    },
+    async deactivateMarketplacePromo() {
+      must(await sb.rpc('klb_deactivate_marketplace_promo'));
+    },
 
     /* ---------- seller applications (user) ---------- */
     async myApplication() {
