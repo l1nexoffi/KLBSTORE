@@ -2,5 +2,6 @@
 // Only the publishable/anon key belongs in the browser. NEVER expose service_role.
 window.KLB_SUPABASE_CONFIG = {
   url: 'https://YOUR_PROJECT.supabase.co',
-  anonKey: 'YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY'
+  anonKey: 'YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY',
+  telegramBotUsername: 'YOUR_BOT_USERNAME' // public bot username only; never put the bot token here
 };

@@ -26,6 +26,10 @@
     'Cannot report yourself': 'Нельзя отправить жалобу на самого себя.',
     'Chat participant unavailable': 'Пользователь не является участником этого чата.',
     'Profile not found': 'Профиль не найден.',
+    'Username already taken': 'Этот никнейм уже занят.',
+    'Username must be 3-24 characters': 'Никнейм должен содержать от 3 до 24 символов: латиница, цифры и _.',
+    'Owner only': 'Управление доступно только создателю KLB STORE.',
+    'Moderator only': 'Недостаточно прав модератора.',
     'Report description must contain 10 to 2000 characters': 'Описание жалобы должно содержать от 10 до 2000 символов.',
     'Dispute reason must contain 10 to 2000 characters': 'Причина спора должна содержать от 10 до 2000 символов.',
 
@@ -38,6 +42,10 @@
     'Only moderators can publish listings': 'Публиковать объявления может только модератор.',
     'Cannot block yourself': 'Нельзя заблокировать самого себя.',
     'Profile not found': 'Профиль не найден.',
+    'Username already taken': 'Этот никнейм уже занят.',
+    'Username must be 3-24 characters': 'Никнейм должен содержать от 3 до 24 символов: латиница, цифры и _.',
+    'Owner only': 'Управление доступно только создателю KLB STORE.',
+    'Moderator only': 'Недостаточно прав модератора.',
     'Invalid login credentials': 'Неверный логин или пароль.',
     'User already registered': 'Этот логин уже занят.',
     'Failed to fetch': 'Нет соединения с сервером.'
@@ -135,7 +143,13 @@
 
     /* ---------- wallet checkout, escrow and order chats ---------- */
     async createMarketplaceOrder(listingId, quantity = 1, expectedUnitPrice = null) {
-      return must(await sb.rpc('create_marketplace_order', { p_listing_id: listingId, p_quantity: quantity, p_expected_unit_price: expectedUnitPrice }));
+      const result = must(await sb.rpc('create_marketplace_order', { p_listing_id: listingId, p_quantity: quantity, p_expected_unit_price: expectedUnitPrice }));
+      // Telegram notification is an auxiliary effect. A bot outage never reverses a successful checkout.
+      try {
+        const { error } = await sb.functions.invoke('telegram-order-notify', { body: { order_id: result.order_id } });
+        if (error) console.warn('KLB Telegram seller notification could not be sent:', error);
+      } catch (err) { console.warn('KLB Telegram seller notification could not be sent:', err); }
+      return result;
     },
     async myChats() {
       const id = await uid();
@@ -210,7 +224,7 @@
       }));
     },
     async profileDetails(userId) {
-      const profile = must(await sb.from('profiles').select('id,username,role,status,bio,created_at').eq('id', userId).single());
+      const profile = must(await sb.from('profiles').select('id,username,role,status,bio,moderator_level,trading_disabled,created_at').eq('id', userId).single());
       const stats = must(await sb.rpc('marketplace_public_profile_stats', { p_user_id: userId }));
       const reviews = must(await sb.from('marketplace_reviews').select('id,order_id,reviewer_id,rating,comment,created_at')
         .eq('seller_id', userId).order('created_at', { ascending: false }).limit(50));
@@ -222,6 +236,27 @@
       const clean = String(bio || '').trim();
       if (clean.length > 1000) throw new Error('Описание профиля: максимум 1000 символов.');
       return must(await sb.from('profiles').update({ bio: clean }).eq('id', id).select('bio').single());
+    },
+    async updateMyUsername(username) {
+      const clean = String(username || '').trim();
+      if (!/^[A-Za-z0-9_]{3,24}$/.test(clean)) throw new Error('Username must be 3-24 characters');
+      const { data, error } = await sb.functions.invoke('klb-profile-username', { body: { username: clean } });
+      if (error) throw error;
+      // The server changes the synthetic Auth email together with the public profile.
+      // Refresh the session so the SDK's cached user record matches the new login.
+      const refreshed = await sb.auth.refreshSession();
+      if (refreshed.error) console.warn('KLB: username was changed, but the session refresh failed:', refreshed.error);
+      return data;
+    },
+    async createTelegramLinkCode() {
+      return must(await sb.rpc('klb_create_telegram_link_code'));
+    },
+    async telegramLogin(widgetUser) {
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: widgetUser });
+      if (error) throw error;
+      const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
+      if (verifyError) throw verifyError;
+      return { ...data, session: verified.session };
     },
 
     /* ---------- admin ---------- */
@@ -344,12 +379,21 @@
         return data.signedUrl;
       },
       async resolveAccountReport(reportId, action, note = '') {
-        must(await sb.rpc('admin_resolve_marketplace_report', { p_report_id: reportId, p_action: action, p_note: note }));
+        must(await sb.rpc('klb_staff_resolve_report', { p_report_id: reportId, p_action: action, p_note: note }));
       },
       async resolveDispute(disputeId, approve, note = '') {
-        must(await sb.rpc('admin_resolve_marketplace_dispute', { p_dispute_id: disputeId, p_approve: !!approve, p_note: note }));
-      }
+        must(await sb.rpc('klb_staff_resolve_dispute', { p_dispute_id: disputeId, p_approve: !!approve, p_note: note }));
+      },
+      async staffAccess() { return must(await sb.rpc('klb_staff_access')); },
+      async moderatorHeartbeat(pageName='dashboard') { must(await sb.rpc('klb_moderator_heartbeat', { p_page: pageName })); },
+      async moderators() { return must(await sb.rpc('klb_moderator_roster')); },
+      async moderatorActivity() { return must(await sb.rpc('klb_moderator_activity_feed')); },
+      async assignModerator(username, level) { must(await sb.rpc('klb_assign_moderator', { p_username: username, p_level: Number(level) })); },
+      async promoCodes() { return must(await sb.from('marketplace_promo_codes').select('*').order('created_at', { ascending: false }).limit(300)); },
+      async createPromoCode(value) { const row = must(await sb.from('marketplace_promo_codes').insert(value).select().single()); must(await sb.rpc('klb_log_moderator_activity', { p_action: 'promo_created', p_target_id: row.id })); return row; },
+      async updatePromoCode(id, patch) { const row = must(await sb.from('marketplace_promo_codes').update(patch).eq('id', id).select().single()); const action = patch.is_active === true ? 'promo_enabled' : 'promo_disabled'; must(await sb.rpc('klb_log_moderator_activity', { p_action: action, p_target_id: id })); return row; }
     }
   };
+  api.staffAccess = () => sb.rpc('klb_staff_access').then(({data,error})=>{if(error)throw error;return data;});
   Object.assign(B, api);
 })();

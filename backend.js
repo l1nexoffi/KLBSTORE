@@ -54,7 +54,8 @@
     async myOrders() { const { data,error }=await sb.from('orders').select('*').order('created_at',{ascending:false}); if(error) throw error; return data; },
     async favorites() { const { data,error }=await sb.from('favorites').select('product_id'); if(error) throw error; return data.map(x=>x.product_id); },
     async toggleFavorite(productId) { const ids=await api.favorites(); if(ids.includes(productId)){const {error}=await sb.from('favorites').delete().eq('product_id',productId);if(error)throw error;return false;}const {error}=await sb.from('favorites').insert({product_id:productId});if(error)throw error;return true; },
-    async isAdmin() { const p=await api.profile(); return p?.role==='admin'&&p.status==='active'; }
+    async isAdmin() { const p=await api.profile(); return p?.role==='admin'&&p.status==='active'; },
+    async isStaff() { const p=await api.profile(); return !!p && p.status==='active' && (p.role==='admin' || Number(p.moderator_level||0)>0); }
   };
   window.KLBBackend = api;
 })();

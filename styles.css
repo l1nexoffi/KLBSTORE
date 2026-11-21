@@ -68,3 +68,48 @@ html,body{max-width:100%;overflow-x:hidden}
 #accountReportForm input[type=file],#marketplaceDisputeForm input[type=file]{width:100%;box-sizing:border-box;padding:11px;border:1px dashed #38506e;border-radius:10px;background:#0b1421;color:#c8d5e6}
 #accountReportForm label,#marketplaceDisputeForm label{display:grid;gap:7px}
 @media(max-width:600px){.chat-participant-actions{align-items:stretch}.chat-participant-actions .secondary-action{width:100%}}
+
+/* KLB STORE account, chat and motion refresh */
+html{scroll-behavior:smooth}
+@keyframes klbRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes klbGlow{0%,100%{box-shadow:0 0 0 rgba(43,132,255,0)}50%{box-shadow:0 0 26px rgba(43,132,255,.12)}}
+@keyframes klbPulse{0%,100%{opacity:.65;transform:scale(.98)}50%{opacity:1;transform:scale(1)}}
+body{animation:klbRise .45s ease both}
+.product-card,.category,.seller-panel,.stat-card,.panel,.chat-list-item{transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease}
+.product-card:hover{transform:translateY(-5px);box-shadow:0 18px 38px #0005;border-color:#315b91}
+.category:hover,.chat-list-item:hover{transform:translateY(-2px)}
+.primary-action,.secondary-action,.login-btn,.buy-button,.telegram-channel-link{transition:transform .18s ease,filter .18s ease,box-shadow .18s ease}
+.primary-action:hover,.buy-button:hover{filter:brightness(1.1);box-shadow:0 8px 24px #287dff33}
+.primary-action:active,.secondary-action:active{transform:scale(.985)}
+.telegram-channel-link{color:#80b7ff!important;text-decoration:none!important;font-size:13px;font-weight:700}
+.telegram-channel-link span{color:#58a7ff}.footer-telegram-link{color:#80b7ff!important;text-decoration:none}
+.funpay-profile-shell{display:grid;gap:16px;animation:klbRise .28s ease both}
+.funpay-profile-shell .profile-card{padding:18px;border:1px solid #2c4564;border-radius:16px;background:linear-gradient(125deg,#142844,#101a2a 70%);margin:0;min-height:72px}
+.funpay-profile-shell .profile-avatar-large{border-radius:50%;width:64px;height:64px;box-shadow:0 0 0 4px #ffffff0b,0 7px 22px #287dff33}
+.funpay-profile-shell .profile-card h3{font-size:20px;letter-spacing:.1px}
+.profile-username-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;padding:14px;border:1px solid #283b55;border-radius:14px;background:#0c1522}
+.profile-username-form label{display:grid;gap:7px;color:#aebfd5;font-size:12px}
+.profile-username-form input{width:100%;box-sizing:border-box;border:1px solid #304763;background:#09111d;color:#fff;border-radius:9px;padding:11px;font:inherit}
+.profile-username-form small{grid-column:1/-1;color:#71849d;font-size:10px}
+.profile-username-form button{width:auto;white-space:nowrap}
+.funpay-profile-shell .profile-stats div{background:#101d2e;border-color:#2b405c}
+.funpay-profile-shell .profile-details{padding:14px;border:1px solid #273a53;border-radius:14px;background:#0d1725}
+.funpay-profile-shell .review-item{border-radius:12px}
+.funpay-chat-modal{width:min(100%,900px);padding:18px!important}
+.funpay-chat-shell{display:grid;gap:12px;min-height:0}
+.funpay-chat-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border:1px solid #2a4565;border-radius:15px;background:linear-gradient(110deg,#152943,#101a29)}
+.funpay-chat-head h3{margin:5px 0 4px;font-size:18px}
+.funpay-chat-head small{color:#9aadc5}
+.funpay-chat-price{font-size:22px;font-weight:800;white-space:nowrap;color:#ecf4ff}
+.funpay-chat-shell .chat-messages{max-height:47vh;min-height:220px;padding:16px;background:radial-gradient(ellipse at 15% 0%,#11223a,#09111d 72%);border-radius:15px}
+.funpay-chat-shell .chat-message{max-width:min(78%,560px);padding:11px 14px;line-height:1.45;box-shadow:0 4px 14px #0002}
+.funpay-chat-shell .chat-message-own{background:linear-gradient(135deg,#174d8c,#153b67);border-color:#2d6fbd}
+.funpay-chat-shell .chat-send-form textarea{min-height:48px;border-radius:12px}
+.funpay-chat-shell .chat-send-form button{border-radius:12px}
+.funpay-chat-shell .chat-order-summary{margin:0}
+.funpay-chat-list .chat-list-item{padding:16px;border-radius:14px;background:linear-gradient(120deg,#132238,#111a27)}
+.telegram-login-divider{text-align:center;color:#7388a4;font-size:11px;margin:4px 0}
+#telegramLoginMount{display:flex;justify-content:center;padding:8px;border:1px solid #2b4565;border-radius:12px;background:#101d2d}
+.telegram-connect-link{display:block;text-align:center;text-decoration:none}
+@media(max-width:650px){.telegram-channel-link{display:none}.profile-username-form{grid-template-columns:1fr}.profile-username-form button{width:100%}.funpay-chat-modal{padding:15px!important}.funpay-chat-head{align-items:flex-start}.funpay-chat-price{font-size:17px}.funpay-chat-shell .chat-messages{min-height:180px;max-height:42vh}.funpay-chat-shell .chat-message{max-width:90%}}
+@media(prefers-reduced-motion:reduce){body{animation:none!important}*,*:before,*:after{animation:none!important;transition:none!important}}

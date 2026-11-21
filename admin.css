@@ -15,3 +15,16 @@
 .reports-panel{padding:22px;margin-bottom:20px}
 .report-description{max-width:300px;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:760px){.financial-period-grid{grid-template-columns:1fr}.financial-panel,.reports-panel{padding:14px}}
+
+/* KLB staff tools and responsive dashboard motion */
+@keyframes adminFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.content>.panel,.content>.welcome,.content>.stats{animation:adminFade .28s ease both}
+.nav-item{transition:background .18s ease,color .18s ease,transform .18s ease}
+.nav-item:hover{transform:translateX(2px)}
+.promo-create-form{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px;align-items:end;margin:18px 0 24px}
+.promo-create-form label{display:grid;gap:6px;color:#aebfd4;font-size:12px}
+.promo-create-form input,.promo-create-form select{min-width:0;width:100%;box-sizing:border-box;padding:10px;border:1px solid #30425a;border-radius:9px;background:#0b1421;color:#fff}
+.promo-create-form button,.promo-create-form p{grid-column:1/-1}
+.promo-create-form p{margin:0}
+@media(max-width:850px){.promo-create-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){.content>.panel,.content>.welcome,.content>.stats{animation:none!important}.nav-item{transition:none!important}}
