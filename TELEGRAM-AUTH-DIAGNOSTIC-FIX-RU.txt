@@ -1,0 +1,15 @@
+KLB STORE — исправление и диагностика Telegram Login
+
+Что изменено:
+1. telegram-auth теперь возвращает корректные статусы: 4xx для проблем запроса/доступа, 5xx для проблем конфигурации или БД.
+2. klb-api.js извлекает JSON {error} из ответа Edge Function вместо общего текста Edge Function returned a non-2xx status code.
+3. refreshProfile(strict=true) больше не скрывает ошибку загрузки профиля после Telegram-входа.
+4. Ошибка OIDC callback отображается в отдельном окне, а не только в консоли.
+
+Установка:
+A. GitHub Pages: заменить файлы сайта содержимым klb_full, сохранить собственный supabase-config.js.
+B. Supabase Dashboard: Edge Functions > telegram-auth > Code. Заменить index.ts кодом из supabase/functions/telegram-auth/index.ts и нажать Deploy.
+C. Verify JWT оставить OFF для telegram-auth, так как функция самостоятельно проверяет Telegram OIDC/Mini App и выполняет свои проверки.
+D. SQL запускать не нужно. Секреты не менять.
+
+После публикации повторить отдельно: (1) вход Mini App из Telegram; (2) вход кнопкой Telegram в обычном Chrome. Если будет ошибка, сайт теперь покажет фактическое сообщение сервера/профиля вместо общего HTTP 400. Дополнительно посмотреть Supabase > Edge Functions > telegram-auth > Logs.

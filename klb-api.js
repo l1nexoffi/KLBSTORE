@@ -6,6 +6,24 @@
   if (!B || !B.configured) return;
   const sb = B.client;
 
+  // Preserve the actual JSON error returned by telegram-auth instead of showing
+  // the generic "Edge Function returned a non-2xx status code" message.
+  async function invokeTelegramAuth(body) {
+    const { data, error } = await sb.functions.invoke('telegram-auth', { body });
+    if (!error) return data;
+    let message = error.message || 'Telegram authentication failed';
+    const response = error.context;
+    if (response && typeof response.clone === 'function') {
+      try {
+        const payload = await response.clone().json();
+        if (payload?.error || payload?.message) message = String(payload.error || payload.message);
+      } catch (_) { /* Keep the SDK error when the body is not JSON. */ }
+    }
+    const enriched = new Error(message);
+    enriched.name = error.name || 'TelegramAuthError';
+    throw enriched;
+  }
+
   const ERRORS = {
     'Authentication required': 'Войди в аккаунт.',
     'Invalid amount': 'Сумма должна быть от 100 до 1 000 000 ₽.',
@@ -326,24 +344,21 @@
     },
     async telegramLoginCode(code, codeVerifier, redirectUri) {
       if (!code || !codeVerifier || !redirectUri) throw new Error('Не хватает данных возврата Telegram. Начни вход заново.');
-      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { code, code_verifier: codeVerifier, redirect_uri: redirectUri } });
-      if (error) throw error;
+      const data = await invokeTelegramAuth({ code, code_verifier: codeVerifier, redirect_uri: redirectUri });
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;
       return { ...data, session: verified.session };
     },
     async telegramLogin(idToken) {
       if (typeof idToken !== 'string' || idToken.split('.').length !== 3) throw new Error('Некорректный Telegram ID token.');
-      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { id_token: idToken } });
-      if (error) throw error;
+      const data = await invokeTelegramAuth({ id_token: idToken });
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;
       return { ...data, session: verified.session };
     },
     async telegramMiniAppLogin(initData) {
       if (typeof initData !== 'string' || !initData) throw new Error('Telegram Mini App не передал initData. Открой KLB STORE через меню бота в Telegram.');
-      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { init_data: initData, source: 'miniapp' } });
-      if (error) throw error;
+      const data = await invokeTelegramAuth({ init_data: initData, source: 'miniapp' });
       if (!data?.token_hash) throw new Error(data?.error || 'Сервер не вернул токен входа Telegram.');
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;
@@ -351,9 +366,7 @@
     },
     async linkTelegramMiniApp(initData) {
       if (typeof initData !== 'string' || !initData) throw new Error('Telegram Mini App не передал initData.');
-      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { init_data: initData, action: 'link', source: 'miniapp' } });
-      if (error) throw error;
-      return data;
+      return await invokeTelegramAuth({ init_data: initData, action: 'link', source: 'miniapp' });
     },
 
     /* ---------- admin ---------- */

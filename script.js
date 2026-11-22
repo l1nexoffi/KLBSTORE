@@ -136,8 +136,8 @@ async function handleTelegramOidcCallback(){
   if(Date.now()-Number(saved.createdAt||0)>10*60*1000)throw new Error('Время входа Telegram истекло. Попробуй ещё раз.');
   if(!SB)throw new Error('Supabase не подключён.');
   const result=await SB.telegramLoginCode(code,saved.verifier,saved.redirectUri);
-  await refreshProfile();
-  if(!current)throw new Error('Telegram подтвердил вход, но профиль KLB STORE не загрузился.');
+  await refreshProfile(true);
+  if(!current)throw new Error('Telegram подтвердил вход, но профиль KLB STORE не загрузился. Проверь запись в profiles и права SELECT.');
   notify(result.is_new?'Аккаунт через Telegram создан!':'Вход через Telegram выполнен');
   if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady();
   if(result.is_new)promptTelegramPasswordSetup();
@@ -184,13 +184,13 @@ async function handleTelegramMiniAppStartup(force=false){
   if(session?.user){
     const linked=await SB.linkTelegramMiniApp(initData);
     window.KLB_TELEGRAM_LINKED_IN_MINIAPP=true;
-    await refreshProfile();
-    if(!current)throw new Error('Telegram привязан, но профиль KLB STORE не загрузился.');
+    await refreshProfile(true);
+    if(!current)throw new Error('Telegram привязан, но профиль KLB STORE не загрузился. Проверь запись в profiles и права SELECT.');
     notify(linked?.already_linked?'Telegram уже привязан к этому аккаунту.':'Telegram привязан к текущему аккаунту KLB STORE.');
   }else{
     const result=await SB.telegramMiniAppLogin(initData);
-    await refreshProfile();
-    if(!current)throw new Error('Telegram подтвердил пользователя, но профиль KLB STORE не загрузился.');
+    await refreshProfile(true);
+    if(!current)throw new Error('Telegram подтвердил пользователя, но профиль KLB STORE не загрузился. Проверь запись в profiles и права SELECT.');
     window.KLB_TELEGRAM_LINKED_IN_MINIAPP=true;
     notify(result.is_new?'Аккаунт KLB STORE создан через Telegram!':'Вход в KLB STORE через Telegram выполнен.');
     if(result.is_new)promptTelegramPasswordSetup();
@@ -200,13 +200,15 @@ async function handleTelegramMiniAppStartup(force=false){
   return true;
 }
 
-async function refreshProfile(){
-  if(!SB)return;
+async function refreshProfile(strict=false){
+  if(!SB)return null;
   try{
     const p=await SB.profile();
     if(!p||p.status==='blocked'){
       if(p)await SB.logout();
-      current=null;remoteFavoriteIds=new Set();walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();return;
+      current=null;remoteFavoriteIds=new Set();walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();
+      if(p?.status==='blocked'&&strict)throw new Error('Аккаунт KLB STORE заблокирован.');
+      return null;
     }
     current={id:p.id,username:p.username,role:p.role,moderator_level:Number(p.moderator_level||0)};
     try{
@@ -215,7 +217,12 @@ async function refreshProfile(){
     }catch(favError){remoteFavoriteIds=new Set();console.warn('KLB favorites load failed:',favError)}
     await refreshWallet();
     render();
-  }catch(e){console.error(e)}
+    return p;
+  }catch(e){
+    console.error('KLB profile hydration failed:',e);
+    if(strict)throw e;
+    return null;
+  }
 }
 async function refreshWallet(){if(!SB||!current)return;try{const w=await SB.wallet();walletBal=w.available;walletReserved=w.reserved;walletEscrow=w.escrow||0}catch(e){console.error(e)}refreshHeader()}
 async function sbAuth(signup,username,password,confirm,err){err.textContent='';const btn=document.querySelector('#authForm button[type=submit]');btn.disabled=true;try{if(signup){if(!/^[a-zA-Z0-9_]{3,24}$/.test(username))throw new Error('Логин: 3–24 символа, латиница, цифры и _');if(password.length<6)throw new Error('Пароль должен быть не короче 6 символов.');if(password!==confirm)throw new Error('Пароли не совпадают');await SB.register(username,password)}await SB.login(username,password);await refreshProfile();if(!current)throw new Error('Не удалось войти. Если аккаунт только что создан, отключи подтверждение email в настройках Supabase Auth.');closeModal();notify(signup?'Аккаунт создан. Добро пожаловать!':'Вход выполнен');if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()}catch(e){err.textContent=SB.ruError(e);btn.disabled=false}}
@@ -600,7 +607,14 @@ $('#favoritesBtn').onclick=()=>{if(!current){authDialog('signup');return}showFav
 async function loadCatalog(){try{if(!SB)return;products=(await SB.catalog()).map(p=>({id:p.id,seller_id:p.seller_id,title:p.title,description:p.description,desc:p.description||'Цифровой товар',price:Number(p.price)||0,category:p.category||'other',catalog_category:p.catalog_category||'other',catalog_subcategory:p.catalog_subcategory||'other',stock:Number(p.stock||0),created_at:p.created_at,image:p.image_url||'',symbol:'✦',label:'KLB',seller:p.seller||'',is_store:p.seller_role==='admin',seller_rating:Number(p.seller_rating||0),seller_review_count:Number(p.seller_review_count||0),promotion_rank:Number(p.promotion_rank||0),promoted_at:p.promoted_at||null}));render()}catch(e){console.error(e);notify(SB.ruError(e)||'Не удалось загрузить каталог')}}
 const telegramCallbackParams=new URLSearchParams(location.search);
 if(telegramCallbackParams.has('code')||telegramCallbackParams.has('error')){
-  handleTelegramOidcCallback().catch(error=>{console.error('KLB Telegram OIDC callback:',error);notify(SB?.ruError?SB.ruError(error):String(error.message||error));refreshProfile().then(refreshHeader);});
+  handleTelegramOidcCallback().catch(error=>{
+    console.error('KLB Telegram OIDC callback:',error);
+    const message=SB?.ruError?SB.ruError(error):String(error.message||error);
+    refreshProfile().then(refreshHeader);
+    modal('Не удалось войти через Telegram',`<p class="form-error">${esc(message)}</p><p class="modal-lead">Telegram вернул пользователя на сайт, но KLB STORE не завершил вход. Скопируй текст ошибки для диагностики.</p><button class="primary-action" id="telegramOidcRetry">Повторить вход</button><button class="secondary-action" id="telegramOidcClose">Закрыть</button>`);
+    $('#telegramOidcRetry').onclick=()=>{closeModal();authDialog('login')};
+    $('#telegramOidcClose').onclick=closeModal;
+  });
 }else if(window.Telegram?.WebApp?.initData){
   handleTelegramMiniAppStartup().catch(async error=>{
     console.error('KLB Telegram Mini App auth:',error);

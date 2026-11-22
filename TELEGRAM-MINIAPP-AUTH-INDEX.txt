@@ -290,13 +290,16 @@ Deno.serve(async (req) => {
     const result = await getOrCreateTelegramAccount(admin, identity);
     return json(result);
   } catch (error) {
-    console.error("telegram-auth error", error);
     const message = error instanceof Error ? error.message : "Telegram authentication failed";
+    console.error("telegram-auth error:", message, error);
+    // Report internal configuration/DB failures as 5xx; reserve 4xx for
+    // invalid Telegram input, expired sessions, blocked accounts and conflicts.
     const status = /already linked/i.test(message) ? 409
-      : /sign in|session is invalid/i.test(message) ? 401
+      : /sign in|session is invalid|signature is invalid|authorization data is expired/i.test(message) ? 401
       : /blocked/i.test(message) ? 403
-      : /signature is invalid|expired/i.test(message) ? 401
-      : 400;
-    return json({ error: message }, status);
+      : /initData|hash|Telegram user information|duplicate fields|redirect URI mismatch|PKCE/i.test(message) ? 400
+      : /not configured|not available|missing/i.test(message) ? 503
+      : 500;
+    return json({ error: message, source: "telegram-auth" }, status);
   }
 });
