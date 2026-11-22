@@ -30,3 +30,7 @@ A backend and database are required for secure authentication, real orders/payme
 ## Telegram Mini App automatic login
 
 See `TELEGRAM-MINIAPP-AUTOLOGIN-RU.md` for the dashboard deployment steps and BotFather Menu Button / Main Mini App URL configuration.
+
+## Latest marketplace category update
+
+The latest catalog update adds game/service categories, per-category subcategories and 49 ₽ seller promotions. See `MARKETPLACE-CATEGORIES-PROMOTIONS-RU.md` and run `marketplace-categories-promotions.sql` after the escrow/chat and trust/safety migrations.

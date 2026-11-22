@@ -393,3 +393,54 @@ html.klb-modal-open,body.klb-modal-open{overflow:hidden!important;overscroll-beh
   .bank-picker-menu{left:-2px;right:-2px}
   .bank-picker-options{max-height:min(36vh,250px)}
 }
+
+/* Hierarchical marketplace catalog and category promotion UI */
+.category-list{grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.category{min-width:0;min-height:76px;padding:12px 14px}
+.category .cat-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:linear-gradient(145deg,#18385d,#102034);border:1px solid #2a4e78;color:#a8ceff;font-family:Rajdhani;font-size:20px;font-weight:800}
+.category-copy{display:grid;gap:4px;min-width:0}
+.category-copy b{font-size:12px;font-weight:750;color:#eaf2ff}
+.category-copy small{font-size:10px;line-height:1.35;color:#8193aa;font-weight:450}
+.category-context{display:grid;gap:14px;margin:0 0 23px}
+.category-context[hidden]{display:none!important}
+.category-back{justify-self:start;border:1px solid #243950;background:#0c1521;color:#a9bfd9;border-radius:9px;padding:8px 12px;font-size:11px;font-weight:650;cursor:pointer}
+.category-hero-card{display:flex;align-items:center;gap:18px;min-height:116px;padding:20px 24px;border:1px solid #234266;border-radius:17px;background:radial-gradient(circle at 85% 40%,#1b57924d,transparent 35%),linear-gradient(115deg,#0f1b2c,#0b1320 65%,#102640);overflow:hidden}
+.category-hero-mark{display:grid;place-items:center;flex:0 0 66px;width:66px;height:66px;border:1px solid #3d83d9;border-radius:18px;background:linear-gradient(145deg,#1a4778,#10213a);color:#e8f3ff;font-family:Rajdhani;font-size:35px;font-weight:800;box-shadow:0 8px 28px #075dff25}
+.category-hero-card h2{margin:5px 0 4px;font-size:27px;letter-spacing:-.7px}
+.category-hero-card p{margin:0;color:#8fa3bd;font-size:12px;line-height:1.5}
+.subcategory-tabs{display:flex;gap:8px;overflow-x:auto;padding:1px 1px 8px;scrollbar-width:thin;scrollbar-color:#36516f transparent;overscroll-behavior-x:contain}
+.subcategory-tab{flex:0 0 auto;border:1px solid #25384e;border-radius:999px;background:#0c1521;color:#a8b8cd;padding:9px 14px;font-size:11px;font-weight:650;cursor:pointer;white-space:nowrap;transition:background .18s,border-color .18s,color .18s}
+.subcategory-tab:hover,.subcategory-tab.active{border-color:#377ed2;background:#14345a;color:#f5f9ff;box-shadow:inset 0 0 0 1px #367ed233}
+.catalog-result-count{margin:5px 0 0;color:#8293a9;font-size:10px}
+.product-card-category{margin:0 0 6px;color:#79a9e8;font-size:9px;font-weight:750;letter-spacing:.02em;text-transform:uppercase}
+.product-rating-line{display:flex;align-items:center;gap:7px;min-height:17px;margin:0 0 10px;color:#f5c66b;font-size:11px;font-weight:750}
+.product-rating-line small{color:#8092a9;font-size:9px;font-weight:500}
+.product-promotion-badge,.product-store-badge{position:absolute;z-index:2;top:9px;left:9px;border-radius:7px;padding:6px 8px;font-size:8px;font-weight:850;letter-spacing:.05em}
+.product-promotion-badge{background:linear-gradient(110deg,#9e6425,#d69a37);border:1px solid #e7b65d;color:#fff9e9;box-shadow:0 4px 14px #0005}
+.product-store-badge{background:#123d71;border:1px solid #3989e8;color:#c9e3ff}
+.seller-listing-row{align-items:flex-start;gap:12px}
+.seller-listing-row>div:first-child{min-width:0;flex:1}
+.seller-listing-actions{display:grid;gap:5px;justify-items:end;flex:0 0 auto}
+.promote-listing-btn{border:1px solid #a97831;background:linear-gradient(120deg,#68431f,#3d2b1d);color:#ffe2a8;border-radius:8px;padding:7px 10px;font-size:10px;font-weight:800;cursor:pointer}
+.promote-listing-btn:hover{filter:brightness(1.15)}
+.promote-listing-btn:disabled{opacity:.55;cursor:wait}
+@media(max-width:900px){.category-list{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){
+  .category-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .category{min-height:68px;padding:9px;gap:9px}
+  .category .cat-icon{flex-basis:34px;width:34px;height:34px;border-radius:10px;font-size:17px}
+  .category-copy b{font-size:11px}
+  .category-copy small{font-size:9px}
+  .category-context{gap:11px;margin-bottom:18px}
+  .category-hero-card{min-height:94px;padding:14px;gap:12px;border-radius:14px}
+  .category-hero-mark{flex-basis:52px;width:52px;height:52px;border-radius:14px;font-size:28px}
+  .category-hero-card h2{font-size:22px}
+  .category-hero-card p{font-size:10px}
+  .subcategory-tab{padding:8px 12px;font-size:10px}
+  .product-card-category{font-size:8px}
+  .product-rating-line{gap:5px;font-size:10px}
+  .product-rating-line small{font-size:8px}
+  .product-promotion-badge,.product-store-badge{top:6px;left:6px;padding:5px 6px;font-size:7px}
+  .seller-listing-row{display:grid;grid-template-columns:minmax(0,1fr)}
+  .seller-listing-actions{display:flex;justify-content:flex-start;justify-items:initial;flex-wrap:wrap}
+}

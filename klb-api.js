@@ -11,6 +11,10 @@
     'Invalid amount': 'Сумма должна быть от 100 до 1 000 000 ₽.',
     'Minimum withdrawal is 500': 'Минимальная сумма вывода 500 ₽.',
     'Insufficient balance': 'Недостаточно средств на балансе.',
+    'Insufficient balance for promotion': 'Для продвижения нужно минимум 49 ₽ на доступном балансе.',
+    'Seller account required': 'Продвигать объявления могут только продавцы.',
+    'Listing must be approved and active': 'Продвигать можно только одобренное активное объявление с остатком товара.',
+    'You can promote only your own listing': 'Можно продвигать только собственные объявления.',
     'Listing unavailable': 'Объявление больше недоступно.',
     'Listing price changed': 'Цена изменилась. Обнови каталог и попробуй ещё раз.',
     'Not enough stock': 'Недостаточно товара в наличии.',
@@ -134,13 +138,15 @@
     },
 
     /* ---------- listings ---------- */
-    async catalog() {
-      const rows = must(await sb.from('seller_listings').select('*').eq('status', 'active').order('created_at', { ascending: false }));
-      const names = await profilesMap(rows.map(r => r.seller_id));
-      return rows.map(r => ({
-        ...r,
-        seller: names[r.seller_id]?.role === 'admin' ? 'KLB STORE' : (names[r.seller_id]?.username || '')
+    async catalog(rootCategory = null, subcategory = null) {
+      const rows = must(await sb.rpc('klb_get_marketplace_catalog', {
+        p_catalog_category: rootCategory || null,
+        p_catalog_subcategory: subcategory && subcategory !== 'all' ? subcategory : null
       }));
+      return rows || [];
+    },
+    async promoteListing(listingId) {
+      return must(await sb.rpc('klb_promote_seller_listing', { p_listing_id: listingId }));
     },
     /* ---------- favorites for marketplace seller_listings ---------- */
     async myFavoriteListingIds() {
@@ -199,7 +205,12 @@
     },
     async createListing(v) {
       const id = await uid();
-      return must(await sb.from('seller_listings').insert({ seller_id: id, title: v.title, description: v.description, category: v.category, price: v.price, stock: v.stock, image_url: v.image_url || null }).select().single());
+      return must(await sb.from('seller_listings').insert({
+        seller_id: id, title: v.title, description: v.description,
+        category: v.category, catalog_category: v.catalog_category || 'other',
+        catalog_subcategory: v.catalog_subcategory || 'other',
+        price: v.price, stock: v.stock, image_url: v.image_url || null
+      }).select().single());
     },
     async updateListing(listingId, patch) { return must(await sb.from('seller_listings').update(patch).eq('id', listingId).select().single()); },
 
@@ -362,7 +373,7 @@
       async listings() {
         const rows = must(await sb.from('seller_listings').select('*').order('created_at', { ascending: false }).limit(300));
         const names = await profilesMap(rows.map(r => r.seller_id));
-        return rows.map(r => ({ id: r.id, userId: r.seller_id, seller: names[r.seller_id]?.username || '', title: r.title, description: r.description, category: r.category, price: Number(r.price), stock: r.stock, image: r.image_url || '', status: LST[r.status] || r.status, note: r.moderation_note }));
+        return rows.map(r => ({ id: r.id, userId: r.seller_id, seller: names[r.seller_id]?.username || '', title: r.title, description: r.description, category: r.category, catalogCategory: r.catalog_category || 'other', catalogSubcategory: r.catalog_subcategory || 'other', price: Number(r.price), stock: r.stock, image: r.image_url || '', status: LST[r.status] || r.status, note: r.moderation_note }));
       },
       async setListing(id, patch) {
         const p = { ...patch };
