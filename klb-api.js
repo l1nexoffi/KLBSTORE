@@ -142,6 +142,49 @@
         seller: names[r.seller_id]?.role === 'admin' ? 'KLB STORE' : (names[r.seller_id]?.username || '')
       }));
     },
+    /* ---------- favorites for marketplace seller_listings ---------- */
+    async myFavoriteListingIds() {
+      const userId = await uid();
+      const rows = must(await sb.from('seller_listing_favorites')
+        .select('listing_id').eq('user_id', userId).order('created_at', { ascending: false }));
+      return rows.map(row => String(row.listing_id));
+    },
+    async migrateLegacyFavoriteListingIds(legacyIds = []) {
+      const userId = await uid();
+      const alreadySaved = new Set(await api.myFavoriteListingIds());
+      const candidates = [...new Set((legacyIds || []).map(String))].filter(id => !alreadySaved.has(id));
+      if (!candidates.length) return [...alreadySaved];
+      // Only migrate IDs that really exist in the current seller_listings catalog.
+      const validRows = must(await sb.from('seller_listings').select('id').in('id', candidates));
+      const validIds = validRows.map(row => String(row.id));
+      if (validIds.length) {
+        must(await sb.from('seller_listing_favorites').insert(validIds.map(listing_id => ({ user_id: userId, listing_id }))));
+      }
+      return api.myFavoriteListingIds();
+    },
+    async myFavoriteListings() {
+      const ids = await api.myFavoriteListingIds();
+      if (!ids.length) return [];
+      const rows = must(await sb.from('seller_listings').select('*').in('id', ids));
+      const names = await profilesMap(rows.map(row => row.seller_id));
+      const byId = new Map(rows.map(row => [String(row.id), row]));
+      return ids.map(id => byId.get(id)).filter(Boolean).map(row => ({
+        ...row,
+        seller: names[row.seller_id]?.role === 'admin' ? 'KLB STORE' : (names[row.seller_id]?.username || '')
+      }));
+    },
+    async toggleFavoriteListing(listingId) {
+      const userId = await uid();
+      const table = sb.from('seller_listing_favorites');
+      const existing = must(await table.select('listing_id')
+        .eq('user_id', userId).eq('listing_id', listingId).maybeSingle());
+      if (existing) {
+        must(await table.delete().eq('user_id', userId).eq('listing_id', listingId));
+        return false;
+      }
+      must(await table.insert({ user_id: userId, listing_id: listingId }));
+      return true;
+    },
     async myListings() {
       const id = await uid();
       return must(await sb.from('seller_listings').select('*').eq('seller_id', id).order('created_at', { ascending: false }));

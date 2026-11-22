@@ -1,6 +1,7 @@
 (()=>{
 const SB=window.KLBBackend&&window.KLBBackend.configured?window.KLBBackend:null;let walletBal=0,walletReserved=0,walletEscrow=0;
 const STORE='klb_users',SESSION='klb_current_user',SELLERS='klb_sellers',ORDERS='klb_orders',LISTINGS='klb_listings',FAV='klb_favorites',PENDING_CHAT='klb_pending_chat';
+let remoteFavoriteIds = new Set();
 const requestedChat=new URLSearchParams(location.search).get('chat');
 if(requestedChat&&/^[0-9a-f-]{20,}$/i.test(requestedChat)){sessionStorage.setItem(PENDING_CHAT,requestedChat);const cleanUrl=location.pathname+location.hash;history.replaceState({},'',cleanUrl);}
 function openPendingChatIfReady(){const chatId=sessionStorage.getItem(PENDING_CHAT);if(!chatId)return;if(!current){authDialog('login');notify('Войди в аккаунт продавца или покупателя — затем откроется нужный чат.');return;}sessionStorage.removeItem(PENDING_CHAT);openChats(chatId);}
@@ -15,9 +16,17 @@ if(window.visualViewport){window.visualViewport.addEventListener('resize',syncMo
 function modal(title,body,actions=''){clearInterval(chatRefreshTimer);chatRefreshTimer=null;syncModalViewport();const m=$('#appModal');document.documentElement.classList.add('klb-modal-open');document.body.classList.add('klb-modal-open');m.innerHTML=`<div class="modal-backdrop" data-close></div><section class="app-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><button class="modal-x" type="button" data-close aria-label="Закрыть окно">×</button><h2>${title}</h2>${body}${actions}</section>`;m.classList.add('open');m.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();closeModal()}));const panel=m.querySelector('.app-modal');panel.addEventListener('click',e=>e.stopPropagation());panel.addEventListener('focusin',e=>{if(e.target.matches('input,textarea,select'))setTimeout(()=>{try{e.target.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'})}catch{}},180)});}
 function closeModal(){clearInterval(chatRefreshTimer);chatRefreshTimer=null;const m=$('#appModal');m.classList.remove('open');m.innerHTML='';document.documentElement.classList.remove('klb-modal-open');document.body.classList.remove('klb-modal-open')}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#appModal').classList.contains('open'))closeModal()});
-function refreshHeader(){const btn=$('#loginBtn'),balanceBtn=$('#balanceBtn'),balanceText=$('#headerBalance'),chatsBtn=$('#chatsBtn');if(chatsBtn){chatsBtn.hidden=!current;chatsBtn.onclick=()=>openChats()}if(!current){btn.innerHTML='Войти <span>↗</span>';btn.onclick=()=>authDialog('login');balanceBtn.hidden=true;return}btn.innerHTML=`<span class="user-pill"><span class="user-avatar">${esc(current.username[0].toUpperCase())}</span>${esc(current.username)} <span>⌄</span></span>`;btn.onclick=profileMenu;balanceBtn.hidden=false;balanceText.textContent=wallet(current.id).toLocaleString('ru-RU')+' ₽';balanceBtn.onclick=walletDialog;}
+function refreshHeader(){
+  const btn=$('#loginBtn'),balanceBtn=$('#balanceBtn'),balanceText=$('#headerBalance'),chatsBtn=$('#chatsBtn'),footerAdmin=$('#footerAdminLink');
+  const staff=!!current&&(current.role==='admin'||Number(current.moderator_level||0)>0);
+  if(footerAdmin)footerAdmin.hidden=!staff;
+  if(chatsBtn){chatsBtn.hidden=!current;chatsBtn.onclick=()=>openChats()}
+  if(!current){btn.innerHTML='Войти <span>↗</span>';btn.onclick=()=>authDialog('login');balanceBtn.hidden=true;return}
+  btn.innerHTML=`<span class="user-pill"><span class="user-avatar">${esc(current.username[0].toUpperCase())}</span>${esc(current.username)} <span>⌄</span></span>`;
+  btn.onclick=profileMenu;balanceBtn.hidden=false;balanceText.textContent=wallet(current.id).toLocaleString('ru-RU')+' ₽';balanceBtn.onclick=walletDialog;
+}
 function profileMenu(){if(SB){refreshProfile().then(()=>{if(current)profileMenuView()});return}profileMenuView()}
-function profileMenuView(){modal(`Привет, ${esc(current.username)}!`, `<div class="profile-menu"><button data-profile="profile">👤 Мой профиль</button><button data-profile="deals">⇄ Мои сделки</button><button data-profile="favorites">♡ Избранное</button><button data-profile="chats">✉ Чаты и сделки</button><button data-profile="wallet">◈ Кошелёк · ${wallet(current.id).toLocaleString('ru-RU')} ₽</button>${current.role==='seller'?'<button data-profile="seller">♙ Панель продавца</button>':''}${current.role==='admin'?'<button data-profile="store">🏪 Объявления KLB STORE</button>':''}${(current.role==='admin'||Number(current.moderator_level||0)>0)?'<button class="admin-shortcut" data-profile="admin">🛡 Войти в админ-панель</button>':''}<button class="logout-action" data-profile="logout">↪ Выйти</button></div>`);document.querySelectorAll('#appModal [data-profile]').forEach(b=>b.addEventListener('click',()=>{const action=b.dataset.profile;closeModal();switch(action){case'profile':showProfile();break;case'deals':showDeals();break;case'favorites':showFavorites();break;case'chats':openChats();break;case'wallet':walletDialog();break;case'seller':case'store':sellerDashboard();break;case'admin':location.href='admin-login.html';break;case'logout':if(SB)SB.logout().catch(()=>{});walletBal=0;walletReserved=0;walletEscrow=0;current=null;localStorage.removeItem(SESSION);refreshHeader();notify('Вы вышли из аккаунта')}}))}
+function profileMenuView(){modal(`Привет, ${esc(current.username)}!`, `<div class="profile-menu"><button data-profile="profile">👤 Мой профиль</button><button data-profile="deals">⇄ Мои сделки</button><button data-profile="favorites">♡ Избранное</button><button data-profile="chats">✉ Чаты и сделки</button><button data-profile="wallet">◈ Кошелёк · ${wallet(current.id).toLocaleString('ru-RU')} ₽</button>${current.role==='seller'?'<button data-profile="seller">♙ Панель продавца</button>':''}${current.role==='admin'?'<button data-profile="store">🏪 Объявления KLB STORE</button>':''}${(current.role==='admin'||Number(current.moderator_level||0)>0)?'<button class="admin-shortcut" data-profile="admin">🛡 Войти в админ-панель</button>':''}<button class="logout-action" data-profile="logout">↪ Выйти</button></div>`);document.querySelectorAll('#appModal [data-profile]').forEach(b=>b.addEventListener('click',()=>{const action=b.dataset.profile;closeModal();switch(action){case'profile':showProfile();break;case'deals':showDeals();break;case'favorites':showFavorites();break;case'chats':openChats();break;case'wallet':walletDialog();break;case'seller':case'store':sellerDashboard();break;case'admin':location.href='admin-login.html';break;case'logout':if(SB)SB.logout().catch(()=>{});walletBal=0;walletReserved=0;walletEscrow=0;current=null;remoteFavoriteIds=new Set();localStorage.removeItem(SESSION);refreshHeader();render();notify('Вы вышли из аккаунта')}}))}
 function authDialog(mode='login'){
   const signup=mode==='signup';
   const telegramClientId=String(window.KLB_SUPABASE_CONFIG?.telegramClientId||'').trim();
@@ -113,7 +122,23 @@ async function handleTelegramOidcCallback(){
   return true;
 }
 
-async function refreshProfile(){if(!SB)return;try{const p=await SB.profile();if(!p||p.status==='blocked'){if(p)await SB.logout();current=null;walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();return}current={id:p.id,username:p.username,role:p.role,moderator_level:Number(p.moderator_level||0)};await refreshWallet()}catch(e){console.error(e)}}
+async function refreshProfile(){
+  if(!SB)return;
+  try{
+    const p=await SB.profile();
+    if(!p||p.status==='blocked'){
+      if(p)await SB.logout();
+      current=null;remoteFavoriteIds=new Set();walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();return;
+    }
+    current={id:p.id,username:p.username,role:p.role,moderator_level:Number(p.moderator_level||0)};
+    try{
+      const legacyIds=read(FAV,{})[current.id]||[];
+      remoteFavoriteIds=new Set(await SB.migrateLegacyFavoriteListingIds(legacyIds));
+    }catch(favError){remoteFavoriteIds=new Set();console.warn('KLB favorites load failed:',favError)}
+    await refreshWallet();
+    render();
+  }catch(e){console.error(e)}
+}
 async function refreshWallet(){if(!SB||!current)return;try{const w=await SB.wallet();walletBal=w.available;walletReserved=w.reserved;walletEscrow=w.escrow||0}catch(e){console.error(e)}refreshHeader()}
 async function sbAuth(signup,username,password,confirm,err){err.textContent='';const btn=document.querySelector('#authForm button[type=submit]');btn.disabled=true;try{if(signup){if(!/^[a-zA-Z0-9_]{3,24}$/.test(username))throw new Error('Логин: 3–24 символа, латиница, цифры и _');if(password.length<6)throw new Error('Пароль должен быть не короче 6 символов.');if(password!==confirm)throw new Error('Пароли не совпадают');await SB.register(username,password)}await SB.login(username,password);await refreshProfile();if(!current)throw new Error('Не удалось войти. Если аккаунт только что создан, отключи подтверждение email в настройках Supabase Auth.');closeModal();notify(signup?'Аккаунт создан. Добро пожаловать!':'Вход выполнен');if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()}catch(e){err.textContent=SB.ruError(e);btn.disabled=false}}
 
@@ -184,7 +209,45 @@ function openDisputeDialog(orderId,chatId){
   $('#marketplaceDisputeForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,btn=form.querySelector('button');btn.disabled=true;try{let path=null;const file=form.elements.evidence.files[0];if(file)path=await SB.uploadModerationEvidence(file);await SB.createDispute(orderId,form.elements.reason.value,path);notify('Спор отправлен администрации');await openChats(chatId)}catch(ex){$('#disputeError').textContent=SB.ruError(ex);btn.disabled=false}};
 }
 function showDeals(){const orders=read(ORDERS,[]).filter(o=>o.buyerId===current.id);modal('Мои сделки',orders.length?`<div class="deal-list">${orders.map(o=>`<article class="deal-row"><div><b>${esc(o.product)}</b><small>Заказ ${esc(o.id)} · ${esc(o.created||'')}</small></div><div class="deal-price">${Number(o.price).toLocaleString('ru-RU')} ₽<small>${esc(o.status)}</small></div></article>`).join('')}</div>`:'<div class="empty-modal">Пока сделок нет. Выбери товар в каталоге, чтобы создать тестовый заказ.</div>')}
-function showFavorites(){const fav=read(FAV,{}),ids=fav[current.id]||[];modal('Избранное',ids.length?`<p>Товары добавленные в избранное: ${ids.length}</p>`:'Пока нет избранных товаров. Нажми ♡ на карточке товара.')}
+async function showFavorites(){
+  if(!current){authDialog('signup');return}
+  modal('Избранное','<div id="favoritesContent" class="empty-modal">Загружаем избранное…</div>');
+  try{
+    let items=[];
+    if(SB){
+      items=await SB.myFavoriteListings();
+      remoteFavoriteIds=new Set(items.map(item=>String(item.id)));
+    }else{
+      const ids=read(FAV,{})[current.id]||[];
+      items=products.filter(item=>ids.includes(String(item.id)));
+    }
+    const host=$('#favoritesContent');
+    if(!host)return;
+    if(!items.length){host.className='empty-modal';host.textContent='В избранном пока пусто. Нажми ♡ на карточке понравившегося товара.';return}
+    host.className='favorites-content';
+    host.innerHTML=`<p class="favorites-count">Товары в избранном: <b>${items.length}</b></p><div class="product-grid favorites-grid">${items.map(item=>{
+      const title=item.title||'Товар';
+      const description=item.description||item.desc||'Цифровой товар';
+      const image=item.image_url||item.image||'';
+      const seller=item.seller||'';
+      return `<article class="product-card"><div class="product-image"><span class="product-label">KLB</span>${image?`<img src="${esc(image)}" alt="${esc(title)}" loading="lazy">`:'<span class="placeholder-symbol">✦</span>'}</div><div class="product-info"><h3>${esc(title)}</h3><p>${esc(description)}</p>${seller?`<small class="product-seller">${seller==='KLB STORE'?'Магазин KLB STORE':`Продавец: ${esc(seller)}`}</small>`:''}<div class="product-bottom"><span class="price">${Number(item.price||0).toLocaleString('ru-RU')} ₽</span><button class="buy-button" type="button" data-favorite-buy="${esc(item.id)}">Купить</button><button class="heart-button is-favorite" type="button" data-favorite-remove="${esc(item.id)}" aria-label="Убрать из избранного">♥</button></div></div></article>`;
+    }).join('')}</div>`;
+    host.querySelectorAll('[data-favorite-remove]').forEach(button=>button.addEventListener('click',async()=>{
+      const id=button.dataset.favoriteRemove;button.disabled=true;
+      try{
+        if(SB){await SB.toggleFavoriteListing(id);remoteFavoriteIds.delete(String(id))}
+        else{const set=favorites();set.delete(String(id));setFavs(set)}
+        notify('Товар убран из избранного');render();await showFavorites();
+      }catch(error){notify(SB?SB.ruError(error):'Не удалось удалить товар');button.disabled=false}
+    }));
+    host.querySelectorAll('[data-favorite-buy]').forEach(button=>button.addEventListener('click',()=>{
+      const item=items.find(row=>String(row.id)===String(button.dataset.favoriteBuy));
+      if(!item)return;
+      const product={id:item.id,title:item.title,desc:item.description||'Цифровой товар',price:Number(item.price)||0,category:item.category||'other',symbol:'✦',label:'KLB',seller:item.seller||'',image:item.image_url||''};
+      if(SB){closeModal();checkoutDialog(product)}else{notify('Покупка доступна после подключения Supabase')}
+    }));
+  }catch(error){const host=$('#favoritesContent');if(host){host.className='form-error';host.textContent=SB?SB.ruError(error):'Не удалось загрузить избранное.'}}
+}
 function marketplaceStatus(status){return status==='paid'?'Ожидает выполнения продавцом':status==='seller_completed'?'Продавец подтвердил выполнение':status==='completed'?'Сделка завершена':status==='disputed'?'Открыт спор':status==='refunded'?'Средства возвращены':status}
 function marketplaceItemName(category){return ({games:'игрового товара',keys:'ключа или кода',subscriptions:'подписки',accounts:'аккаунта',services:'услуги',other:'товара или услуги'})[category]||'товара или услуги'}
 async function openChats(preferredChatId=null){if(!current){authDialog('login');notify('Войди в аккаунт, чтобы открыть чаты');return}if(!SB){modal('Чаты','<div class="empty-modal">Чаты доступны после подключения Supabase.</div>');return}modal('Чаты и сделки','<div id="chatListContent" class="empty-modal">Загружаем чаты…</div>');try{await refreshWallet();const chats=await SB.myChats();if(preferredChatId&&chats.some(c=>c.id===preferredChatId)){await openChat(preferredChatId,chats);return}const host=$('#chatListContent');if(!chats.length){host.className='empty-modal';host.textContent='Пока нет сделок. После оплаты заказа здесь появится чат с продавцом.';return}host.className='deal-list funpay-chat-list';host.innerHTML=chats.map(c=>{const o=c.order||{},last=c.latestMessage;return `<button class="chat-list-item funpay-chat-preview" data-open-chat="${esc(c.id)}"><span class="chat-list-main"><b>${esc(o.listing_title||'Заказ')}</b><small>${esc(c.otherUsername)} · ${esc(marketplaceStatus(o.status||''))}</small><small class="chat-last-message">${last?esc(last.body):'Чат создан после оплаты'}</small></span><span class="chat-list-price">${Number(o.gross_amount||0).toLocaleString('ru-RU')} ₽</span></button>`}).join('');host.querySelectorAll('[data-open-chat]').forEach(b=>b.onclick=()=>openChat(b.dataset.openChat,chats))}catch(e){const host=$('#chatListContent');if(host){host.className='form-error';host.textContent=SB.ruError(e)}}}
@@ -239,15 +302,21 @@ async function checkoutDialog(product){
 const demoProducts=[];
 if(!localStorage.getItem('klb_products_cleared_v1')){write(LISTINGS,[]);localStorage.setItem('klb_products_cleared_v1','1')}let saved=read(LISTINGS,null),products=SB?[]:saved?saved.filter(p=>p.status==='Активно').map(p=>({id:p.id,title:p.title,desc:p.description||'Цифровой товар',price:Number(p.price)||0,category:p.category||'other',symbol:'✦',label:'KLB',seller:p.seller,image:p.image})):demoProducts;
 let activeCategory='all';const grid=$('#productGrid'),search=$('#searchInput'),sort=$('#sortSelect'),empty=$('#emptyState'),favCount=$('#favoriteCount');
-function favorites(){const f=read(FAV,{});return new Set(f[current?.id||'guest']||[])}function setFavs(s){const f=read(FAV,{});f[current?.id||'guest']=[...s];write(FAV,f)}
+function favorites(){if(SB)return new Set(remoteFavoriteIds);const f=read(FAV,{});return new Set(f[current?.id||'guest']||[])}function setFavs(s){if(SB){remoteFavoriteIds=new Set(s);return}const f=read(FAV,{});f[current?.id||'guest']=[...s];write(FAV,f)}
 function render(){const f=favorites();let list=products.filter(p=>(activeCategory==='all'||p.category===activeCategory)&&(`${p.title} ${p.desc}`.toLowerCase().includes(search.value.toLowerCase())));if(sort.value==='low')list.sort((a,b)=>a.price-b.price);if(sort.value==='high')list.sort((a,b)=>b.price-a.price);grid.innerHTML=list.map(p=>`<article class="product-card"><div class="product-image"><span class="product-label">${esc(p.label)}</span>${p.image?`<img src="${esc(p.image)}" alt="${esc(p.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">`:`<span class="placeholder-symbol">${p.symbol}</span>`}</div><div class="product-info"><h3>${esc(p.title)}</h3><p>${esc(p.desc)}</p>${p.seller?`<small class="product-seller">${p.seller==='KLB STORE'?'Магазин KLB STORE':`Продавец: ${esc(p.seller)}`}</small>`:''}<div class="product-bottom"><span class="price">${p.price.toLocaleString('ru-RU')} ₽</span><button class="buy-button" data-product="${p.id}">Купить</button><button class="heart-button ${f.has(p.id)?'is-favorite':''}" data-fav="${p.id}" aria-label="В избранное">${f.has(p.id)?'♥':'♡'}</button></div></div></article>`).join('');empty.hidden=list.length>0;favCount.textContent=f.size}
 document.querySelectorAll('.category').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.category').forEach(b=>b.classList.remove('active'));btn.classList.add('active');activeCategory=btn.dataset.category;render()}));search.addEventListener('input',render);sort.addEventListener('change',render);
-grid.addEventListener('click', e => {
+grid.addEventListener('click', async e => {
   const fav = e.target.closest('[data-fav]');
   if (fav) {
-    const set = favorites(), id = String(fav.dataset.fav);
-    set.has(id) ? set.delete(id) : set.add(id);
-    setFavs(set); render(); return;
+    if(!current){authDialog('signup');notify('Создай аккаунт или войди, чтобы добавлять товары в избранное.');return;}
+    const id=String(fav.dataset.fav),set=favorites();fav.disabled=true;
+    try{
+      if(SB){const added=await SB.toggleFavoriteListing(id);added?set.add(id):set.delete(id)}
+      else{set.has(id)?set.delete(id):set.add(id);setFavs(set)}
+      if(SB)remoteFavoriteIds=new Set(set);
+      render();
+    }catch(error){notify(SB?SB.ruError(error):'Не удалось изменить избранное');fav.disabled=false}
+    return;
   }
   const buy = e.target.closest('[data-product]');
   if (!buy) return;
@@ -267,7 +336,7 @@ grid.addEventListener('click', e => {
     modal('Демо-заказ создан', `<div class="order-success"><span>✓</span><h3>Заказ сохранён в демо-режиме</h3><p>${esc(product.title)}</p><b>${product.price.toLocaleString('ru-RU')} ₽</b><p class="modal-lead">Для реальной оплаты, чатов и удержания средств подключи Supabase и выполни миграцию маркетплейса.</p></div>`);
   });
 });
-$('#favoritesBtn').onclick=()=>ensureLogin(showFavorites);$('#loginBtn').onclick=()=>current?profileMenu():authDialog('login');if($('#chatsBtn'))$('#chatsBtn').onclick=()=>openChats();$('#sellerBtn').onclick=sellerApply;refreshHeader();render();
+$('#favoritesBtn').onclick=()=>{if(!current){authDialog('signup');return}showFavorites()};$('#loginBtn').onclick=()=>current?profileMenu():authDialog('login');if($('#chatsBtn'))$('#chatsBtn').onclick=()=>openChats();$('#sellerBtn').onclick=sellerApply;refreshHeader();render();
 async function loadCatalog(){if(!SB)return;try{products=(await SB.catalog()).map(p=>({id:p.id,title:p.title,desc:p.description||'Цифровой товар',price:Number(p.price)||0,category:p.category||'other',symbol:'✦',label:'KLB',seller:p.seller,image:p.image_url||''}))}catch(e){console.error(e);notify('Не удалось загрузить каталог')}render()}
 const telegramCallbackParams=new URLSearchParams(location.search);
 if(telegramCallbackParams.has('code')||telegramCallbackParams.has('error')){
