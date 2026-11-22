@@ -144,6 +144,9 @@ async function sbAuth(signup,username,password,confirm,err){err.textContent='';c
 
 function setCurrent(user){current={id:user.id,username:user.username,role:user.role};write(SESSION,current);refreshHeader()}
 const BANKS=['Сбербанк','Т-Банк','ВТБ','Альфа-Банк','Газпромбанк','ПСБ','Совкомбанк','Россельхозбанк','Московский кредитный банк','Банк Санкт-Петербург','ОТП Банк','МТС Банк','Уралсиб','Почта Банк','Яндекс Банк','Банк ДОМ.РФ','Райффайзенбанк','ЮниКредит Банк','АК БАРС','Русский Стандарт','Озон Банк','Другой банк'];
+const BANK_BRANDS={
+  'Сбербанк':{mark:'S',tone:'sber'},'Т-Банк':{mark:'Т',tone:'tbank'},'ВТБ':{mark:'ВТБ',tone:'vtb'},'Альфа-Банк':{mark:'A',tone:'alfa'},'Газпромбанк':{mark:'Г',tone:'gaz'},'ПСБ':{mark:'ПСБ',tone:'psb'},'Совкомбанк':{mark:'С',tone:'sovkom'},'Россельхозбанк':{mark:'РСХБ',tone:'rshb'},'Московский кредитный банк':{mark:'МКБ',tone:'mkb'},'Банк Санкт-Петербург':{mark:'БСПБ',tone:'bspb'},'ОТП Банк':{mark:'OTP',tone:'otp'},'МТС Банк':{mark:'МТС',tone:'mts'},'Уралсиб':{mark:'U',tone:'uralsib'},'Почта Банк':{mark:'ПБ',tone:'pochta'},'Яндекс Банк':{mark:'Я',tone:'yandex'},'Банк ДОМ.РФ':{mark:'ДОМ',tone:'dom'},'Райффайзенбанк':{mark:'R',tone:'raiff'},'ЮниКредит Банк':{mark:'U',tone:'unicredit'},'АК БАРС':{mark:'АК',tone:'akbars'},'Русский Стандарт':{mark:'РС',tone:'rsb'},'Озон Банк':{mark:'O',tone:'ozon'},'Другой банк':{mark:'+',tone:'neutral'}
+};
 const walletKey='klb_wallets',depositKey='klb_deposits',withdrawKey='klb_withdrawals',walletSettingsKey='klb_wallet_settings';
 function wallet(userId){if(SB)return walletBal;const w=read(walletKey,{});return Number(w[userId]||0)}
 function setWallet(userId,value){const w=read(walletKey,{});w[userId]=Math.max(0,Number(value)||0);write(walletKey,w);if(current&&current.id===userId)refreshHeader()}
@@ -152,10 +155,161 @@ function addLedger(userId,kind,amount,ref,note){const h=read('klb_wallet_history
 function walletDialog(){if(!current){authDialog('login');return}if(SB){refreshWallet().then(walletDialogView);return}walletDialogView()}
 function walletDialogView(){modal('Кошелёк',`<div class="wallet-balance"><span>Доступный баланс</span><b>${wallet(current.id).toLocaleString('ru-RU')} ₽</b>${SB&&walletReserved>0?`<span style="margin-top:8px">В обработке (вывод): ${walletReserved.toLocaleString('ru-RU')} ₽</span>`:''}${SB&&walletEscrow>0?`<span style="margin-top:8px">Оплаченные заказы до подтверждения: ${walletEscrow.toLocaleString('ru-RU')} ₽</span>`:''}</div><div class="profile-menu"><button data-wallet="deposit">＋ Пополнить баланс</button><button data-wallet="withdraw">↗ Вывести средства</button><button data-wallet="history">◷ История операций</button><button data-wallet="chats">✉ Чаты и сделки</button></div>`);document.querySelectorAll('#appModal [data-wallet]').forEach(b=>b.addEventListener('click',()=>{const a=b.dataset.wallet;if(a==='deposit')depositDialog();if(a==='withdraw')withdrawDialog();if(a==='history')walletHistoryDialog();if(a==='chats')openChats()}))}
 async function sbDepositDialog(){modal('Пополнение баланса','<div class="empty-modal">Загрузка…</div>');let ins;try{ins=await SB.depositInstructions()}catch(e){modal('Пополнение баланса',`<p class="form-error">${esc(SB.ruError(e))}</p>`);return}if(!ins.bank||!ins.details){modal('Пополнение баланса','<div class="empty-modal">Реквизиты для пополнения ещё не настроены администратором. Попробуй позже.</div>');return}modal('Пополнение баланса',`<form class="modal-form" id="depositForm"><label>Сумма, ₽<input name="amount" type="number" min="100" max="1000000" step="1" required placeholder="Например, 1000"></label><p class="modal-lead">После создания заявки переведи деньги на указанные реквизиты и обязательно укажи код в комментарии к переводу.</p><p><b>Банк:</b> ${esc(ins.bank)}<br><b>Реквизиты:</b> ${esc(ins.details)}</p><p class="form-error" id="depositError"></p><button class="primary-action">Создать заявку</button></form>`);$('#depositForm').onsubmit=async e=>{e.preventDefault();const amount=Number(new FormData(e.target).get('amount')),btn=e.target.querySelector('button');if(!(amount>=100&&amount<=1000000)){$('#depositError').textContent='Минимум 100 ₽, максимум 1 000 000 ₽';return}btn.disabled=true;try{const r=await SB.createDeposit(amount);modal('Заявка создана',`<div class="order-success"><span>✓</span><h3>Переведи ${amount.toLocaleString('ru-RU')} ₽</h3><p><b>${esc(ins.bank)}</b><br>${esc(ins.details)}</p><div class="wallet-code">${esc(r.comment_code)}</div><p class="modal-lead">Укажи этот код в комментарии к переводу. Начисление произойдёт после проверки администратором.</p><button class="primary-action" id="depositPaid">Я оплатил(а)</button><button class="secondary-action" id="depositDone">Закрыть</button></div>`);$('#depositDone').onclick=closeModal;$('#depositPaid').onclick=async()=>{try{await SB.markDepositChecking(r.id);closeModal();notify('Заявка передана на проверку')}catch(er){notify(SB.ruError(er))}}}catch(er){$('#depositError').textContent=SB.ruError(er);btn.disabled=false}}}
-async function sbWithdraw(v){const btn=document.querySelector('#withdrawForm button');btn.disabled=true;try{await SB.createWithdrawal(v);await refreshWallet();closeModal();notify('Заявка на вывод отправлена')}catch(e){$('#withdrawError').textContent=SB.ruError(e);btn.disabled=false}}
+async function sbWithdraw(v){const btn=document.querySelector('#withdrawForm button[type=submit]');btn.disabled=true;try{await SB.createWithdrawal(v);await refreshWallet();closeModal();notify('Заявка на вывод отправлена')}catch(e){$('#withdrawError').textContent=SB.ruError(e);btn.disabled=false}}
 async function sbHistory(){modal('История кошелька','<div class="empty-modal">Загрузка…</div>');try{const [led,deps,wds]=await Promise.all([SB.ledger(),SB.myDeposits(),SB.myWithdrawals()]);const L={deposit:'Пополнение',withdrawal_reserve:'Вывод: резерв',withdrawal_refund:'Вывод: возврат',withdrawal_paid:'Вывод: выплачено',purchase:'Покупка',purchase_escrow:'Оплата заказа удержана в эскроу',sale:'Продажа до комиссии',commission:'Комиссия KLB STORE · 5%',adjustment:'Корректировка'};const reqs=[...deps.map(d=>({t:d.created_at,title:'Заявка на пополнение · код '+d.comment_code,st:SB.labels.DEP[d.status]||d.status,amt:Number(d.amount)})),...wds.map(d=>({t:d.created_at,title:'Заявка на вывод',st:SB.labels.WDR[d.status]||d.status,amt:-Number(d.amount)}))].sort((a,b)=>b.t.localeCompare(a.t));const row=(title,sub,amt)=>`<article class="deal-row"><div><b>${esc(title)}</b><small>${esc(sub)}</small></div><div class="deal-price">${amt>0?'+':''}${amt.toLocaleString('ru-RU')} ₽</div></article>`;modal('История кошелька',(reqs.length?`<h3>Заявки</h3><div class="deal-list">${reqs.map(r=>row(r.title,new Date(r.t).toLocaleString('ru-RU')+' · '+r.st,r.amt)).join('')}</div>`:'')+(led.length?`<h3>Операции по балансу</h3><div class="deal-list">${led.map(x=>row(L[x.operation]||x.operation,new Date(x.created_at).toLocaleString('ru-RU'),Number(x.amount))).join('')}</div>`:'')||'<div class="empty-modal">Операций пока нет.</div>')}catch(e){modal('История кошелька',`<p class="form-error">${esc(SB.ruError(e))}</p>`)}}
 function depositDialog(){if(SB){sbDepositDialog();return}const settings=read(walletSettingsKey,{}),bank=settings.depositBank||'Банк не настроен',card=settings.depositCard||'Реквизиты пока не указаны';modal('Пополнение баланса',`<form class="modal-form" id="depositForm"><label>Сумма, ₽<input name="amount" type="number" min="100" max="1000000" step="1" required placeholder="Например, 1000"></label><p class="modal-lead">После создания заявки переведи деньги на указанные реквизиты и обязательно укажи код в комментарии к переводу.</p><p><b>Банк:</b> ${esc(bank)}<br><b>Реквизиты:</b> ${esc(card)}</p><p class="form-error" id="depositError"></p><button class="primary-action">Создать заявку</button></form>`);$('#depositForm').onsubmit=e=>{e.preventDefault();const amount=Number(new FormData(e.target).get('amount'));if(amount<100||amount>1000000){$('#depositError').textContent='Минимум 100 ₽, максимум 1 000 000 ₽';return}let code;const all=read(depositKey,[]);do{code=String(Math.floor(10000+Math.random()*90000))}while(all.some(x=>x.code===code&&['Ожидает оплаты','Проверка'].includes(x.status)));const req={id:'D'+Date.now(),userId:current.id,username:current.username,amount,code,bank,card,status:'Ожидает оплаты',created:new Date().toISOString()};all.push(req);write(depositKey,all);modal('Заявка создана',`<div class="order-success"><span>✓</span><h3>Переведи ${amount.toLocaleString('ru-RU')} ₽</h3><p><b>${esc(bank)}</b><br>${esc(card)}</p><div class="wallet-code">${code}</div><p class="modal-lead">Укажи этот код в комментарии к переводу. Код уникален для заявки. Начисление произойдёт после проверки администратором.</p><button class="primary-action" id="depositDone">Понятно</button></div>`);$('#depositDone').onclick=closeModal}}
-function withdrawDialog(){modal('Вывод средств',`<form class="modal-form" id="withdrawForm"><label>Способ вывода<select name="method"><option value="bank">На карту российского банка</option><option value="usdt">USDT TRC20</option></select></label><div id="withdrawFields"><label>Банк<select name="bank">${BANKS.map(b=>`<option>${esc(b)}</option>`).join('')}</select></label><label>Номер телефона получателя<input name="phone" inputmode="tel" placeholder="+7 900 000-00-00"></label></div><label id="cryptoField" hidden>Адрес USDT TRC20<input name="address" placeholder="T..." autocomplete="off"></label><label>Сумма в рублях<input name="amount" type="number" min="500" step="1" required placeholder="Минимум 500"></label><p class="modal-lead">Доступно: <b>${wallet(current.id).toLocaleString('ru-RU')} ₽</b>. Заявка будет проверена администратором. Для USDT сумма заявки указывается в рублёвом эквиваленте; администратор конвертирует её вручную. Сеть только TRC20.</p><p class="form-error" id="withdrawError"></p><button class="primary-action">Отправить заявку</button></form>`);const f=$('#withdrawForm'),method=f.elements.method,bankfields=$('#withdrawFields'),crypto=$('#cryptoField');f.elements.phone.required=true;method.onchange=()=>{bankfields.hidden=method.value==='usdt';crypto.hidden=method.value!=='usdt';f.elements.phone.required=method.value==='bank';f.elements.address.required=method.value==='usdt'};f.onsubmit=e=>{e.preventDefault();const fd=new FormData(f),amount=Number(fd.get('amount')),bal=wallet(current.id);if(amount<500){$('#withdrawError').textContent='Минимальная сумма вывода 500 ₽';return}if(amount>bal){$('#withdrawError').textContent='Недостаточно средств';return}if(method.value==='bank'&&!/^\+?[0-9 ()-]{10,18}$/.test(fd.get('phone'))){$('#withdrawError').textContent='Укажи корректный номер телефона';return}if(method.value==='usdt'&&!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(fd.get('address'))){$('#withdrawError').textContent='Проверь адрес TRC20';return}if(SB){sbWithdraw({method:method.value,amount,bank:fd.get('bank')||'',phone:fd.get('phone')||'',address:fd.get('address')||''});return}setWallet(current.id,bal-amount);addLedger(current.id,'withdrawal_reserve',-amount,'pending','Средства зарезервированы для вывода');const req={id:'R'+Date.now(),userId:current.id,username:current.username,method:method.value,bank:fd.get('bank')||'',phone:fd.get('phone')||'',address:fd.get('address')||'',amount,status:'Ожидает выплаты',created:new Date().toISOString()};const arr=read(withdrawKey,[]);arr.push(req);write(withdrawKey,arr);closeModal();notify('Заявка на вывод отправлена')}}
+function withdrawDialog(){
+  const bankBrand = (bank) => {
+    const brand = BANK_BRANDS[bank] || { mark: 'Б', tone: 'neutral' };
+    return `<span class="pay-brand pay-brand-${brand.tone}" aria-hidden="true">${esc(brand.mark)}</span>`;
+  };
+  const bankOptions = BANKS.map(bank => `<button type="button" class="bank-option${bank==='Сбербанк'?' is-selected':''}" role="option" aria-selected="${bank==='Сбербанк'?'true':'false'}" data-bank-option="${esc(bank)}">${bankBrand(bank)}<span class="bank-option-name">${esc(bank)}</span><span class="bank-option-check" aria-hidden="true">✓</span></button>`).join('');
+  modal('Вывод средств', `
+    <form class="modal-form withdraw-form" id="withdrawForm">
+      <div class="withdraw-section-label">Способ вывода</div>
+      <div class="withdraw-method-grid" role="radiogroup" aria-label="Способ вывода">
+        <button type="button" class="withdraw-method-card is-active" data-method-option="bank" role="radio" aria-checked="true">
+          <span class="withdraw-method-icon method-card-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><rect x="4" y="7" width="24" height="18" rx="4"/><path d="M4 13h24M9 20h6"/></svg></span>
+          <span class="withdraw-method-copy"><b>На карту банка</b><small>Перевод по номеру телефона</small></span>
+          <span class="withdraw-method-check" aria-hidden="true">✓</span>
+        </button>
+        <button type="button" class="withdraw-method-card" data-method-option="sbp" role="radio" aria-checked="false">
+          <span class="withdraw-method-icon method-sbp-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 11h16l-4-4M25 21H9l4 4M23 11l3 3-3 3M9 21l-3-3 3-3"/></svg></span>
+          <span class="withdraw-method-copy"><b>Перевод по СБП</b><small>Моментальный перевод по телефону</small></span>
+          <span class="withdraw-method-check" aria-hidden="true">✓</span>
+        </button>
+        <button type="button" class="withdraw-method-card" data-method-option="usdt" role="radio" aria-checked="false">
+          <span class="withdraw-method-icon method-usdt-icon" aria-hidden="true">₮</span>
+          <span class="withdraw-method-copy"><b>USDT TRC20</b><small>Криптовалютный перевод в сети TRON</small></span>
+          <span class="withdraw-method-check" aria-hidden="true">✓</span>
+        </button>
+      </div>
+      <input type="hidden" name="method" value="bank">
+
+      <div class="withdraw-bank-fields" id="withdrawFields">
+        <label><span id="bankFieldLabel">Банк получателя</span>
+          <div class="bank-picker" id="withdrawBankPicker">
+            <button type="button" class="bank-picker-trigger" id="bankPickerTrigger" aria-expanded="false" aria-controls="bankPickerMenu">
+              ${bankBrand('Сбербанк')}
+              <span class="bank-picker-selected"><b id="selectedBankName">Сбербанк</b><small>Выбери банк для получения средств</small></span>
+              <svg class="bank-picker-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg>
+            </button>
+            <div class="bank-picker-menu" id="bankPickerMenu" hidden>
+              <div class="bank-picker-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input type="search" id="bankSearch" placeholder="Найти банк…" autocomplete="off" aria-label="Найти банк"></div>
+              <div class="bank-picker-options" role="listbox" aria-label="Список банков">${bankOptions}</div>
+            </div>
+            <input type="hidden" name="bank" value="Сбербанк">
+          </div>
+        </label>
+        <label><span id="phoneFieldLabel">Номер телефона получателя</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 900 000-00-00"></label>
+      </div>
+      <label id="cryptoField" class="withdraw-crypto-field" hidden>Адрес USDT TRC20<input name="address" placeholder="T..." autocomplete="off" spellcheck="false"></label>
+      <label>Сумма в рублях<input name="amount" type="number" min="500" step="1" required inputmode="numeric" placeholder="Минимум 500"></label>
+      <div class="withdraw-balance-note"><span class="withdraw-note-icon" aria-hidden="true">i</span><span>Доступно: <b>${wallet(current.id).toLocaleString('ru-RU')} ₽</b>. Минимальная сумма вывода — 500 ₽. Заявка будет проверена администратором. Для USDT сумма указывается в рублёвом эквиваленте; выплата производится вручную в сети TRC20.</span></div>
+      <p class="form-error" id="withdrawError"></p>
+      <button type="submit" class="primary-action withdraw-submit">Отправить заявку</button>
+    </form>`);
+
+  const f = $('#withdrawForm');
+  const methodInput = f.elements.method;
+  const bankFields = $('#withdrawFields');
+  const cryptoField = $('#cryptoField');
+  const phoneInput = f.elements.phone;
+  const addressInput = f.elements.address;
+  const bankPicker = $('#withdrawBankPicker');
+  const bankTrigger = $('#bankPickerTrigger');
+  const bankMenu = $('#bankPickerMenu');
+  const bankSearch = $('#bankSearch');
+  const bankHidden = f.elements.bank;
+
+  const setMethod = (value) => {
+    methodInput.value = value;
+    f.querySelectorAll('[data-method-option]').forEach(button => {
+      const active = button.dataset.methodOption === value;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+    const isCrypto = value === 'usdt';
+    bankFields.hidden = isCrypto;
+    cryptoField.hidden = !isCrypto;
+    phoneInput.required = !isCrypto;
+    addressInput.required = isCrypto;
+    $('#phoneFieldLabel').textContent = value === 'sbp' ? 'Номер телефона для СБП' : 'Номер телефона получателя';
+  };
+  f.querySelectorAll('[data-method-option]').forEach(button => button.addEventListener('click', () => setMethod(button.dataset.methodOption)));
+
+  const openBankMenu = () => {
+    bankMenu.hidden = false;
+    bankTrigger.setAttribute('aria-expanded', 'true');
+    bankSearch.value = '';
+    bankMenu.querySelectorAll('[data-bank-option]').forEach(option => option.hidden = false);
+    setTimeout(() => bankSearch.focus({ preventScroll: true }), 30);
+  };
+  const closeBankMenu = () => {
+    bankMenu.hidden = true;
+    bankTrigger.setAttribute('aria-expanded', 'false');
+  };
+  bankTrigger.addEventListener('click', () => bankMenu.hidden ? openBankMenu() : closeBankMenu());
+  bankSearch.addEventListener('input', () => {
+    const query = bankSearch.value.trim().toLocaleLowerCase('ru-RU');
+    bankMenu.querySelectorAll('[data-bank-option]').forEach(option => {
+      option.hidden = !option.dataset.bankOption.toLocaleLowerCase('ru-RU').includes(query);
+    });
+  });
+  bankMenu.querySelectorAll('[data-bank-option]').forEach(option => option.addEventListener('click', () => {
+    const bank = option.dataset.bankOption;
+    bankHidden.value = bank;
+    $('#selectedBankName').textContent = bank;
+    const logo = bankPicker.querySelector('.bank-picker-trigger .pay-brand');
+    logo.outerHTML = bankBrand(bank);
+    bankMenu.querySelectorAll('[data-bank-option]').forEach(item => {
+      const selected = item === option;
+      item.classList.toggle('is-selected', selected);
+      item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+    closeBankMenu();
+  }));
+  f.addEventListener('click', event => {
+    if (!bankPicker.contains(event.target) && !bankMenu.hidden) closeBankMenu();
+  });
+  f.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !bankMenu.hidden) {
+      event.preventDefault();
+      closeBankMenu();
+      bankTrigger.focus();
+    }
+  });
+
+  setMethod('bank');
+  f.onsubmit = e => {
+    e.preventDefault();
+    const fd = new FormData(f);
+    const method = String(fd.get('method'));
+    const amount = Number(fd.get('amount'));
+    const balance = wallet(current.id);
+    const bank = String(fd.get('bank') || '');
+    const phone = String(fd.get('phone') || '').trim();
+    const address = String(fd.get('address') || '').trim();
+    const error = $('#withdrawError');
+    error.textContent = '';
+
+    if (!Number.isFinite(amount) || amount < 500) { error.textContent = 'Минимальная сумма вывода 500 ₽'; return; }
+    if (amount > balance) { error.textContent = 'Недостаточно средств'; return; }
+    if (method !== 'usdt' && (!bank || !/^\+?[0-9 ()-]{10,18}$/.test(phone))) { error.textContent = 'Укажи банк и корректный номер телефона'; return; }
+    if (method === 'usdt' && !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) { error.textContent = 'Проверь адрес TRC20'; return; }
+
+    const payload = { method, amount, bank, phone, address };
+    if (SB) { sbWithdraw(payload); return; }
+    setWallet(current.id, balance - amount);
+    addLedger(current.id, 'withdrawal_reserve', -amount, 'pending', 'Средства зарезервированы для вывода');
+    const req = { id: 'R' + Date.now(), userId: current.id, username: current.username, method, bank, phone, address, amount, status: 'Ожидает выплаты', created: new Date().toISOString() };
+    const requests = read(withdrawKey, []);
+    requests.push(req);
+    write(withdrawKey, requests);
+    closeModal();
+    notify('Заявка на вывод отправлена');
+  };
+}
 function walletHistoryDialog(){if(SB){sbHistory();return}const h=walletHistory(current.id).slice().reverse();modal('История кошелька',h.length?`<div class="deal-list">${h.map(x=>`<article class="deal-row"><div><b>${esc(x.note||x.kind)}</b><small>${new Date(x.date).toLocaleString('ru-RU')} · ${esc(x.ref||'')}</small></div><div class="deal-price">${x.amount>0?'+':''}${Number(x.amount).toLocaleString('ru-RU')} ₽</div></article>`).join('')}</div>`:'<div class="empty-modal">Операций пока нет.</div>')}
 const sbListing=r=>({id:r.id,title:r.title,description:r.description,category:r.category,price:Number(r.price),stock:r.stock,image:r.image_url||'',status:SB.labels.LST[r.status]||r.status,note:r.moderation_note});
 function sellerDashboard(){if(SB){SB.myListings().then(rows=>sellerDashboardView(rows.map(sbListing))).catch(e=>notify(SB.ruError(e)));return}sellerDashboardView(read(LISTINGS,[]).filter(p=>p.userId===current.id))}

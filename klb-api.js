@@ -101,7 +101,7 @@
     async markDepositChecking(id) { must(await sb.rpc('mark_deposit_checking', { p_request: id })); },
     async createWithdrawal({ method, amount, bank, phone, address }) {
       return must(await sb.rpc('create_withdrawal_request', {
-        p_method: method === 'usdt' ? 'usdt_trc20' : 'bank_phone', p_amount: amount,
+        p_method: method === 'usdt' ? 'usdt_trc20' : (method === 'sbp' ? 'sbp_phone' : 'bank_phone'), p_amount: amount,
         p_bank: method === 'usdt' ? null : bank, p_phone: method === 'usdt' ? null : phone, p_address: method === 'usdt' ? address : null
       }));
     },
@@ -341,7 +341,7 @@
       async withdrawals() {
         const rows = must(await sb.from('withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200));
         const names = await profilesMap(rows.map(r => r.user_id));
-        return rows.map(r => ({ id: r.id, userId: r.user_id, username: names[r.user_id]?.username || r.user_id.slice(0, 8), method: r.method === 'usdt_trc20' ? 'usdt' : 'bank', bank: r.bank_name || '', phone: r.phone || '', address: r.crypto_address || '', amount: Number(r.amount), status: WDR[r.status] || r.status, created: r.created_at }));
+        return rows.map(r => ({ id: r.id, userId: r.user_id, username: names[r.user_id]?.username || r.user_id.slice(0, 8), method: r.method === 'usdt_trc20' ? 'usdt' : (r.method === 'sbp_phone' ? 'sbp' : 'bank'), bank: r.bank_name || '', phone: r.phone || '', address: r.crypto_address || '', amount: Number(r.amount), status: WDR[r.status] || r.status, created: r.created_at }));
       },
       async reviewWithdrawal(id, paid) { must(await sb.rpc('admin_review_withdrawal', { p_request: id, p_paid: paid })); },
       async listings() {

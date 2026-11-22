@@ -313,3 +313,83 @@ html.klb-modal-open,body.klb-modal-open{overflow:hidden!important;overscroll-beh
   .favorites-grid .buy-button{font-size:10px;padding:7px 8px}
   .favorites-grid .heart-button{min-width:34px;min-height:34px}
 }
+
+
+/* Modern in-site withdrawal method and bank pickers */
+.withdraw-form{gap:16px}
+.withdraw-section-label{color:#b9c7d9;font-size:13px;font-weight:650;margin-bottom:-7px}
+.withdraw-method-grid{display:grid;gap:9px}
+.withdraw-method-card{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-width:0;min-height:72px;padding:12px 14px;border:1px solid #2b3d54;border-radius:15px;background:linear-gradient(145deg,#121e2d,#0d1622);color:#eaf2ff;text-align:left;cursor:pointer;transition:border-color .18s ease,background .18s ease,box-shadow .18s ease,transform .18s ease}
+.withdraw-method-card:hover{border-color:#5278ad;background:linear-gradient(145deg,#17283c,#101d2c)}
+.withdraw-method-card.is-active{border-color:#3887ff;background:linear-gradient(145deg,rgba(35,91,157,.31),rgba(18,35,55,.96));box-shadow:inset 0 0 0 1px rgba(56,135,255,.18),0 8px 24px rgba(0,0,0,.12)}
+.withdraw-method-card:focus-visible,.bank-picker-trigger:focus-visible,.bank-option:focus-visible{outline:2px solid #61a0ff;outline-offset:2px}
+.withdraw-method-icon{flex:0 0 44px;width:44px;height:44px;display:grid;place-items:center;border-radius:13px;border:1px solid rgba(255,255,255,.09);background:#192b40;font-weight:800}
+.withdraw-method-icon svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.method-card-icon{color:#83b7ff;background:linear-gradient(145deg,#1c3b61,#152943)}
+.method-sbp-icon{color:#8ce0c2;background:linear-gradient(145deg,#164b3d,#142c2b)}
+.method-usdt-icon{color:#b0edca;background:linear-gradient(145deg,#176342,#153e34);font-size:27px}
+.withdraw-method-copy{display:grid;gap:4px;min-width:0;flex:1}
+.withdraw-method-copy b{font-size:14px;font-weight:650;letter-spacing:.005em}
+.withdraw-method-copy small{font-size:11px;font-weight:450;color:#8fa4bd;line-height:1.35}
+.withdraw-method-check{display:grid;place-items:center;width:21px;height:21px;flex:0 0 21px;border:1px solid #52657e;border-radius:50%;color:transparent;font-size:12px;font-weight:800}
+.withdraw-method-card.is-active .withdraw-method-check{border-color:#438dff;background:#287dff;color:white}
+.withdraw-bank-fields{display:grid;gap:13px}
+.bank-picker{position:relative}
+.bank-picker-trigger{display:flex;align-items:center;gap:12px;width:100%;min-height:68px;padding:10px 13px;border:1px solid #2b4058;border-radius:14px;background:#0b1420;color:#edf4ff;text-align:left;cursor:pointer;transition:border-color .18s,background .18s}
+.bank-picker-trigger:hover,.bank-picker-trigger[aria-expanded="true"]{border-color:#438dff;background:#101e2e}
+.pay-brand{display:inline-grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:13px;background:#203047;color:#fff;font-size:13px;font-weight:800;letter-spacing:-.04em;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.pay-brand-sber{background:#087c55;color:#fff;font-size:23px}
+.pay-brand-tbank{background:#f2c94c;color:#16191e;font-size:22px}
+.pay-brand-vtb{background:#174d98;color:#fff;font-size:11px}
+.pay-brand-alfa{background:#d82735;color:#fff;font-size:22px}
+.pay-brand-gaz{background:#155b9b;color:#d7efff;font-size:20px}
+.pay-brand-psb{background:#142d55;color:#d9e9ff;font-size:11px}
+.pay-brand-sovkom{background:#6f3eaa;color:#fff;font-size:22px}
+.pay-brand-rshb{background:#247a49;color:#e6ffea;font-size:9px}
+.pay-brand-mkb{background:#5c4ba5;color:#fff;font-size:10px}
+.pay-brand-bspb{background:#24649c;color:#fff;font-size:9px}
+.pay-brand-otp{background:#dc313d;color:#fff;font-size:12px}
+.pay-brand-mts{background:#c82931;color:#fff;font-size:11px}
+.pay-brand-uralsib{background:#f0f5fb;color:#1768af;font-size:22px}
+.pay-brand-pochta{background:#2872ad;color:#fff;font-size:12px}
+.pay-brand-yandex{background:#262a33;color:#ff5a44;font-size:22px}
+.pay-brand-dom{background:#1c8b9e;color:#e9ffff;font-size:10px}
+.pay-brand-raiff{background:#f3d34a;color:#171717;font-size:22px}
+.pay-brand-unicredit{background:#b72c39;color:#fff;font-size:22px}
+.pay-brand-akbars{background:#18764c;color:#fff;font-size:13px}
+.pay-brand-rsb{background:#155b91;color:#fff;font-size:12px}
+.pay-brand-ozon{background:#5b36bd;color:#fff;font-size:22px}
+.pay-brand-neutral{background:#34455b;color:#eaf2ff;font-size:20px}
+.bank-picker-selected{display:grid;gap:4px;flex:1;min-width:0}
+.bank-picker-selected b{font-size:14px;font-weight:650;color:#eef5ff}
+.bank-picker-selected small{font-size:11px;color:#849ab4;font-weight:450}
+.bank-picker-chevron{flex:0 0 19px;width:19px;height:19px;fill:none;stroke:#95aac4;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
+.bank-picker-trigger[aria-expanded="true"] .bank-picker-chevron{transform:rotate(180deg)}
+.bank-picker-menu{position:absolute;left:0;right:0;top:calc(100% + 7px);z-index:30;padding:9px;border:1px solid #2b4058;border-radius:15px;background:#111c2a;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.bank-picker-menu[hidden]{display:none!important}
+.bank-picker-search{display:flex;align-items:center;gap:9px;padding:0 11px;height:42px;margin-bottom:7px;border:1px solid #293c54;border-radius:10px;background:#0a121d}
+.bank-picker-search svg{width:17px;height:17px;fill:none;stroke:#829ab7;stroke-width:1.8;stroke-linecap:round}
+.bank-picker-search input{flex:1;min-width:0!important;width:100%;height:100%;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font-size:14px!important;outline:0!important;box-shadow:none!important}
+.bank-picker-options{display:grid;gap:3px;max-height:260px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#40536d transparent}
+.bank-option{display:flex;align-items:center;gap:11px;width:100%;min-height:52px;padding:6px 9px;border:1px solid transparent;border-radius:10px;background:transparent;color:#dbe7f5;text-align:left;cursor:pointer;transition:background .15s,border-color .15s}
+.bank-option:hover{background:#192a3d;border-color:#2d4562}
+.bank-option.is-selected{background:#182d46;border-color:#315d91}
+.bank-option[hidden]{display:none!important}
+.bank-option .pay-brand{width:34px;height:34px;flex-basis:34px;border-radius:10px;font-size:11px}
+.bank-option .pay-brand-sber,.bank-option .pay-brand-alfa,.bank-option .pay-brand-sovkom,.bank-option .pay-brand-uralsib,.bank-option .pay-brand-yandex,.bank-option .pay-brand-raiff,.bank-option .pay-brand-unicredit,.bank-option .pay-brand-ozon{font-size:17px}
+.bank-option-name{flex:1;font-size:13px;font-weight:550;line-height:1.3}
+.bank-option-check{color:#69a8ff;font-weight:900;opacity:0}
+.bank-option.is-selected .bank-option-check{opacity:1}
+.withdraw-balance-note{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #263b52;border-radius:12px;background:#101d2b;color:#91a6bf;font-size:11px;line-height:1.55}
+.withdraw-balance-note b{color:#eaf2ff;font-weight:750}
+.withdraw-note-icon{display:grid;place-items:center;flex:0 0 19px;width:19px;height:19px;border:1px solid #426186;border-radius:50%;color:#91c0ff;font-size:12px;font-weight:800}
+.withdraw-submit{min-height:49px!important;border-radius:12px!important;font-size:14px!important;letter-spacing:.005em}
+@media(max-width:560px){
+  .withdraw-method-card{min-height:68px;padding:10px 11px;gap:10px;border-radius:13px}
+  .withdraw-method-icon{width:40px;height:40px;flex-basis:40px;border-radius:11px}
+  .withdraw-method-copy b{font-size:13px}
+  .withdraw-method-copy small{font-size:10px}
+  .bank-picker-trigger{min-height:63px;padding:9px 11px}
+  .bank-picker-menu{left:-2px;right:-2px}
+  .bank-picker-options{max-height:min(36vh,250px)}
+}
