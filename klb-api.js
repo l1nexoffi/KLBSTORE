@@ -329,6 +329,21 @@
       if (verifyError) throw verifyError;
       return { ...data, session: verified.session };
     },
+    async telegramMiniAppLogin(initData) {
+      if (typeof initData !== 'string' || !initData) throw new Error('Telegram Mini App не передал initData. Открой KLB STORE через меню бота в Telegram.');
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { init_data: initData, source: 'miniapp' } });
+      if (error) throw error;
+      if (!data?.token_hash) throw new Error(data?.error || 'Сервер не вернул токен входа Telegram.');
+      const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
+      if (verifyError) throw verifyError;
+      return { ...data, session: verified.session };
+    },
+    async linkTelegramMiniApp(initData) {
+      if (typeof initData !== 'string' || !initData) throw new Error('Telegram Mini App не передал initData.');
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { init_data: initData, action: 'link', source: 'miniapp' } });
+      if (error) throw error;
+      return data;
+    },
 
     /* ---------- admin ---------- */
     admin: {

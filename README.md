@@ -25,3 +25,8 @@ Change these demo credentials in `script.js` and `auth.js` before sharing the de
 
 ## Production deployment
 A backend and database are required for secure authentication, real orders/payments, shared user data, seller inventory, and admin permissions. Static frontend is intentionally structured as a prototype only.
+
+
+## Telegram Mini App automatic login
+
+See `TELEGRAM-MINIAPP-AUTOLOGIN-RU.md` for the dashboard deployment steps and BotFather Menu Button / Main Mini App URL configuration.

@@ -1,0 +1,302 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status, headers: { ...cors, "Content-Type": "application/json" },
+});
+const telegramJwks = createRemoteJWKSet(new URL("https://oauth.telegram.org/.well-known/jwks.json"));
+const encoder = new TextEncoder();
+
+function keyFromEnvironmentMap(name: string): string | null {
+  const raw = Deno.env.get(name);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.default === "string" && parsed.default.length > 0) return parsed.default;
+    const first = Object.values(parsed).find(value => typeof value === "string" && value.length > 0);
+    return typeof first === "string" ? first : null;
+  } catch { return null; }
+}
+function getSupabaseSecretKey(): string {
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || keyFromEnvironmentMap("SUPABASE_SECRET_KEYS");
+  if (!key) throw new Error("Supabase secret/service-role key is not configured in Edge Function environment");
+  return key;
+}
+function getSupabasePublishableKey(): string {
+  const key = Deno.env.get("SUPABASE_ANON_KEY") || keyFromEnvironmentMap("SUPABASE_PUBLISHABLE_KEYS");
+  if (!key) throw new Error("Supabase publishable/anon key is not configured in Edge Function environment");
+  return key;
+}
+
+async function hmacSha256(keyBytes: Uint8Array, message: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
+}
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+async function validateMiniAppInitData(raw: string, botToken: string) {
+  if (!raw || raw.length > 16000) throw new Error("Invalid Telegram Mini App initData");
+  const params = new URLSearchParams(raw);
+  const receivedHash = (params.get("hash") || "").toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(receivedHash)) throw new Error("Telegram Mini App initData has no valid hash");
+
+  const seen = new Set<string>();
+  for (const [key] of params.entries()) {
+    if (seen.has(key)) throw new Error("Telegram Mini App initData contains duplicate fields");
+    seen.add(key);
+  }
+
+  const checkString = [...params.entries()]
+    .filter(([key]) => key !== "hash")
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+
+  // Telegram Mini Apps HMAC: first derive HMAC(key="WebAppData", data=bot token),
+  // then use the derived bytes as the key for the data-check-string HMAC.
+  const secret = await hmacSha256(encoder.encode("WebAppData"), botToken);
+  const calculated = toHex(await hmacSha256(secret, checkString));
+  if (!constantTimeEqual(calculated, receivedHash)) throw new Error("Telegram Mini App signature is invalid");
+
+  const authDate = Number(params.get("auth_date"));
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(authDate) || authDate <= 0 || authDate > now + 60 || now - authDate > 24 * 60 * 60) {
+    throw new Error("Telegram Mini App authorization data is expired. Reopen the Mini App.");
+  }
+
+  let user: any = null;
+  try { user = JSON.parse(params.get("user") || "null"); } catch { user = null; }
+  if (!user || !/^\d{5,25}$/.test(String(user.id || ""))) throw new Error("Telegram user information is missing");
+
+  let chat: any = null;
+  try { chat = JSON.parse(params.get("chat") || "null"); } catch { chat = null; }
+  const chatType = String(params.get("chat_type") || "");
+  const chatId = chat?.id
+    ? String(chat.id)
+    : ((chatType === "private" || chatType === "sender" || !chatType) ? String(user.id) : null);
+
+  return {
+    telegramId: String(user.id),
+    username: typeof user.username === "string" ? user.username.slice(0, 64) : null,
+    fullName: [user.first_name, user.last_name].filter(Boolean).join(" ").slice(0, 100),
+    chatId,
+  };
+}
+
+async function getOrCreateTelegramAccount(admin: any, identity: {
+  telegramId: string; username: string | null; fullName: string; chatId: string | null;
+}) {
+  const { telegramId, username, fullName, chatId } = identity;
+  const { data: mapped, error: mapError } = await admin.from("klb_telegram_accounts")
+    .select("user_id").eq("telegram_user_id", telegramId).maybeSingle();
+  if (mapError) throw mapError;
+
+  let userId: string | null = mapped?.user_id || null;
+  let email = `klbstore.tg${telegramId}@gmail.com`;
+  let isNew = false;
+
+  if (userId) {
+    const { data: got, error } = await admin.auth.admin.getUserById(userId);
+    if (error) throw error;
+    if (!got.user?.email) throw new Error("Telegram-linked KLB account has no login email");
+    email = got.user.email;
+  } else {
+    const generatedUsername = `tg${telegramId}`;
+    const { data: existingProfile, error: profileError } = await admin.from("profiles")
+      .select("id").eq("username", generatedUsername).maybeSingle();
+    if (profileError) throw profileError;
+
+    if (existingProfile?.id) {
+      userId = existingProfile.id;
+      const { data: got, error } = await admin.auth.admin.getUserById(userId);
+      if (error) throw error;
+      if (!got.user?.email) throw new Error("Existing Telegram profile has no Auth email");
+      email = got.user.email;
+    } else {
+      const randomPassword = `${crypto.randomUUID()}-${crypto.randomUUID()}!`;
+      const { data: created, error: createError } = await admin.auth.admin.createUser({
+        email,
+        password: randomPassword,
+        email_confirm: true,
+        user_metadata: {
+          username: generatedUsername,
+          telegram_user_id: telegramId,
+          telegram_username: username,
+          telegram_name: fullName,
+        },
+      });
+      if (createError) throw createError;
+      userId = created.user.id;
+      isNew = true;
+      const { error: profileUpsertError } = await admin.from("profiles").upsert({
+        id: userId, username: generatedUsername, role: "user", status: "active",
+      }, { onConflict: "id" });
+      if (profileUpsertError) throw profileUpsertError;
+    }
+  }
+
+  const { data: profile, error: profileGetError } = await admin.from("profiles")
+    .select("status").eq("id", userId).maybeSingle();
+  if (profileGetError) throw profileGetError;
+  if (profile?.status === "blocked") throw new Error("Account is blocked");
+
+  const { data: existingByUser, error: existingByUserError } = await admin.from("klb_telegram_accounts")
+    .select("telegram_user_id").eq("user_id", userId).maybeSingle();
+  if (existingByUserError) throw existingByUserError;
+  if (existingByUser?.telegram_user_id && existingByUser.telegram_user_id !== telegramId) {
+    throw new Error("Another Telegram account is already linked to this KLB STORE profile");
+  }
+
+  const identityRow: Record<string, unknown> = {
+    user_id: userId,
+    telegram_user_id: telegramId,
+    telegram_username: username,
+    linked_at: new Date().toISOString(),
+  };
+  // OIDC login does not carry a bot chat ID; don't erase a chat ID saved earlier by the Mini App or /start.
+  if (chatId) identityRow.telegram_chat_id = chatId;
+  const { error: identityError } = await admin.from("klb_telegram_accounts").upsert(identityRow, { onConflict: "user_id" });
+  if (identityError) throw identityError;
+
+  const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  if (linkError) throw linkError;
+  const tokenHash = link.properties?.hashed_token;
+  if (!tokenHash) throw new Error("Could not create a secure sign-in token");
+  return { token_hash: tokenHash, is_new: isNew, username: isNew ? `tg${telegramId}` : undefined };
+}
+
+async function linkMiniAppToCurrentKlbAccount(req: Request, admin: any, identity: {
+  telegramId: string; username: string | null; chatId: string | null;
+}) {
+  const authorization = req.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) throw new Error("Sign in to KLB STORE before linking Telegram to your existing account");
+  const url = Deno.env.get("SUPABASE_URL");
+  if (!url) throw new Error("Supabase URL is not configured");
+  const userClient = createClient(url, getSupabasePublishableKey(), {
+    global: { headers: { Authorization: authorization } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: authData, error: authError } = await userClient.auth.getUser();
+  if (authError || !authData.user) throw new Error("KLB STORE session is invalid. Sign in again.");
+  const userId = authData.user.id;
+  const { data: profile, error: profileError } = await admin.from("profiles")
+    .select("status").eq("id", userId).maybeSingle();
+  if (profileError) throw profileError;
+  if (!profile || profile.status === "blocked") throw new Error("Account is blocked or profile is missing");
+
+  const { data: existingByTelegram, error: byTelegramError } = await admin.from("klb_telegram_accounts")
+    .select("user_id").eq("telegram_user_id", identity.telegramId).maybeSingle();
+  if (byTelegramError) throw byTelegramError;
+  if (existingByTelegram?.user_id && existingByTelegram.user_id !== userId) {
+    throw new Error("This Telegram account is already linked to another KLB STORE account");
+  }
+  const { data: existingByUser, error: byUserError } = await admin.from("klb_telegram_accounts")
+    .select("telegram_user_id").eq("user_id", userId).maybeSingle();
+  if (byUserError) throw byUserError;
+  if (existingByUser?.telegram_user_id && existingByUser.telegram_user_id !== identity.telegramId) {
+    throw new Error("Another Telegram account is already linked to this KLB STORE profile");
+  }
+
+  const identityRow: Record<string, unknown> = {
+    user_id: userId,
+    telegram_user_id: identity.telegramId,
+    telegram_username: identity.username,
+    linked_at: new Date().toISOString(),
+  };
+  if (identity.chatId) identityRow.telegram_chat_id = identity.chatId;
+  const { error: saveError } = await admin.from("klb_telegram_accounts").upsert(identityRow, { onConflict: "user_id" });
+  if (saveError) throw saveError;
+  return { linked: true, already_linked: !!existingByTelegram?.user_id };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  try {
+    const url = Deno.env.get("SUPABASE_URL");
+    const serviceKey = getSupabaseSecretKey();
+    if (!url || !serviceKey) return json({ error: "Supabase server keys are not configured." }, 503);
+    const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const body = await req.json();
+
+    // Mini App route: validate raw Telegram.WebApp.initData with the private bot token.
+    if (typeof body?.init_data === "string" && body.init_data) {
+      const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+      if (!botToken) return json({ error: "Set TELEGRAM_BOT_TOKEN in Supabase Edge Function Secrets." }, 503);
+      const identity = await validateMiniAppInitData(body.init_data, botToken);
+      if (body.action === "link") {
+        const result = await linkMiniAppToCurrentKlbAccount(req, admin, identity);
+        return json(result);
+      }
+      const result = await getOrCreateTelegramAccount(admin, identity);
+      return json(result);
+    }
+
+    // Normal website opened outside Telegram: Telegram OIDC Authorization Code / signed ID token.
+    const clientId = Deno.env.get("TELEGRAM_CLIENT_ID") || Deno.env.get("TELEGRAM_OIDC_CLIENT_ID");
+    if (!clientId) return json({ error: "Set TELEGRAM_CLIENT_ID in Supabase Edge Function Secrets." }, 503);
+    let idToken = String(body?.id_token || "");
+    const code = String(body?.code || "");
+    if (code) {
+      const clientSecret = Deno.env.get("TELEGRAM_CLIENT_SECRET");
+      const configuredRedirectUri = Deno.env.get("TELEGRAM_REDIRECT_URI");
+      const redirectUri = String(body?.redirect_uri || "");
+      const codeVerifier = String(body?.code_verifier || "");
+      if (!clientSecret || !configuredRedirectUri) return json({ error: "Set TELEGRAM_CLIENT_SECRET and TELEGRAM_REDIRECT_URI in Supabase Edge Function Secrets." }, 503);
+      if (redirectUri !== configuredRedirectUri) return json({ error: "Telegram redirect URI mismatch. Match BotFather, site config, and TELEGRAM_REDIRECT_URI exactly." }, 400);
+      if (!codeVerifier || codeVerifier.length < 43 || codeVerifier.length > 128) return json({ error: "Invalid PKCE code verifier." }, 400);
+      const tokenBody = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri, client_id: clientId, code_verifier: codeVerifier });
+      const basic = btoa(`${clientId}:${clientSecret}`);
+      const tokenResponse = await fetch("https://oauth.telegram.org/token", {
+        method: "POST",
+        headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: tokenBody,
+      });
+      const tokenResult = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok || !tokenResult.id_token) {
+        console.error("Telegram code exchange failed", tokenResponse.status, tokenResult.error || tokenResult.error_description || "no id_token");
+        return json({ error: tokenResult.error_description || tokenResult.error || "Telegram could not exchange the authorization code." }, 401);
+      }
+      idToken = String(tokenResult.id_token);
+    }
+
+    if (!idToken || idToken.length > 12000) return json({ error: "Missing or invalid Telegram ID token" }, 400);
+    const { payload } = await jwtVerify(idToken, telegramJwks, {
+      issuer: "https://oauth.telegram.org", audience: clientId, clockTolerance: 10,
+    });
+    const telegramId = String(payload.id ?? payload.sub ?? "");
+    if (!/^\d{5,25}$/.test(telegramId)) return json({ error: "Telegram account ID is missing from the verified token" }, 401);
+    if (payload.exp && Number(payload.exp) < Math.floor(Date.now() / 1000)) return json({ error: "Telegram login has expired. Try again." }, 401);
+    const identity = {
+      telegramId,
+      username: typeof payload.preferred_username === "string" ? payload.preferred_username.slice(0, 64) : null,
+      fullName: typeof payload.name === "string" ? payload.name.slice(0, 100) : "",
+      chatId: null,
+    };
+    const result = await getOrCreateTelegramAccount(admin, identity);
+    return json(result);
+  } catch (error) {
+    console.error("telegram-auth error", error);
+    const message = error instanceof Error ? error.message : "Telegram authentication failed";
+    const status = /already linked/i.test(message) ? 409
+      : /sign in|session is invalid/i.test(message) ? 401
+      : /blocked/i.test(message) ? 403
+      : /signature is invalid|expired/i.test(message) ? 401
+      : 400;
+    return json({ error: message }, status);
+  }
+});

@@ -46,3 +46,8 @@ See `УСТАНОВКА-RU.md` for the step-by-step Russian setup guide.
 ## Client Secret и JS Login SDK
 
 Текущая кнопка сайта использует `Telegram.Login.init()` / `Telegram.Login.open()` и получает подписанный `id_token`. Для этого сценария Client Secret в браузере и в Edge Function не нужен: сервер проверяет подпись JWT через Telegram JWKS и сверяет `iss`, `aud` и срок действия. Client Secret применяется в альтернативном OIDC Authorization Code Flow при обмене `code` на token. Не добавляйте Client Secret в публичные файлы сайта.
+
+
+## Telegram Mini App auto-login update
+
+This build also supports the Telegram Menu Button / Main Mini App via validated `Telegram.WebApp.initData`. Publish `supabase/functions/telegram-auth/index.ts` from this build and follow `TELEGRAM-MINIAPP-AUTOLOGIN-RU.md`. The existing OIDC flow remains for normal browsers.

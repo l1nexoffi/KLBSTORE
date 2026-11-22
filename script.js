@@ -32,7 +32,8 @@ function authDialog(mode='login'){
   const telegramClientId=String(window.KLB_SUPABASE_CONFIG?.telegramClientId||'').trim();
   const telegramRedirectUri=String(window.KLB_SUPABASE_CONFIG?.telegramRedirectUri||'').trim();
   const telegramEnabled=/^\d+$/.test(telegramClientId)&&/^https:\/\//i.test(telegramRedirectUri);
-  const telegramBlock=telegramEnabled?'<div class="telegram-login-divider">или</div><div id="telegramLoginMount" class="telegram-login-mount"><button type="button" class="tg-auth-button">Войти через Telegram</button></div>':'';
+  const inTelegramMiniApp=!!(window.Telegram?.WebApp?.initData);
+  const telegramBlock=telegramEnabled?'<div class="telegram-login-divider">или</div><div id="telegramLoginMount" class="telegram-login-mount"><button type="button" class="tg-auth-button">'+(inTelegramMiniApp?'Продолжить с Telegram':'Войти через Telegram')+'</button></div>':'';
   modal(signup?'Создать аккаунт':'Вход в KLB STORE',`<form id="authForm" class="modal-form">${signup?'<label>Никнейм / логин<input name="username" minlength="3" maxlength="24" required autocomplete="username" placeholder="Твой ник"></label>':'<label>Логин<input name="username" required autocomplete="username" placeholder="Логин"></label>'}<label>Пароль<input name="password" type="password" minlength="4" required autocomplete="current-password" placeholder="Пароль"></label>${signup?'<label>Повтор пароля<input name="confirm" type="password" minlength="4" required placeholder="Повтори пароль"></label>':''}<p class="form-error" id="authError"></p><button class="primary-action" type="submit">${signup?'Зарегистрироваться':'Войти'}</button><button class="link-action" type="button" id="switchAuth">${signup?'Уже есть аккаунт? Войти':'Нет аккаунта? Зарегистрироваться'}</button>${telegramBlock}</form>`);
   $('#authForm').addEventListener('submit',e=>{
     e.preventDefault();
@@ -56,8 +57,10 @@ function authDialog(mode='login'){
     const button=$('#telegramLoginMount .tg-auth-button');
     button.onclick=async()=>{
       button.disabled=true;button.textContent='Переход в Telegram…';
-      try{await beginTelegramOidcLogin(telegramClientId,telegramRedirectUri);}
-      catch(error){button.disabled=false;button.textContent='Войти через Telegram';const mount=$('#telegramLoginMount');mount.insertAdjacentHTML('beforeend',`<small class=\"telegram-login-error\">${esc(error?.message||'Не удалось начать вход через Telegram.')}</small>`);}
+      try{
+        if(window.Telegram?.WebApp?.initData) await handleTelegramMiniAppStartup(true);
+        else await beginTelegramOidcLogin(telegramClientId,telegramRedirectUri);
+      }catch(error){button.disabled=false;button.textContent=window.Telegram?.WebApp?.initData?'Продолжить с Telegram':'Войти через Telegram';const mount=$('#telegramLoginMount');mount.insertAdjacentHTML('beforeend',`<small class=\"telegram-login-error\">${esc(error?.message||'Не удалось начать вход через Telegram.')}</small>`);}
     };
   }
 
@@ -109,16 +112,63 @@ async function handleTelegramOidcCallback(){
   if(!current)throw new Error('Telegram подтвердил вход, но профиль KLB STORE не загрузился.');
   notify(result.is_new?'Аккаунт через Telegram создан!':'Вход через Telegram выполнен');
   if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady();
-  if(result.is_new){
-    modal('Задай пароль',`<p class="modal-lead">Аккаунт создан через Telegram. Придумай пароль, чтобы можно было входить и по логину.</p><form id="telegramPasswordForm" class="modal-form"><label>Новый пароль<input name="password" type="password" minlength="6" required></label><label>Повтори пароль<input name="confirm" type="password" minlength="6" required></label><p class="form-error" id="telegramPasswordError"></p><button class="primary-action">Сохранить пароль</button></form>`);
-    $('#telegramPasswordForm').onsubmit=async e=>{
-      e.preventDefault();const f=e.currentTarget;
-      if(f.elements.password.value!==f.elements.confirm.value){$('#telegramPasswordError').textContent='Пароли не совпадают.';return;}
-      const b=f.querySelector('button');b.disabled=true;
-      try{const {error}=await SB.client.auth.updateUser({password:f.elements.password.value});if(error)throw error;modal('Готово','<p class="modal-lead">Теперь можно входить через Telegram или логин и пароль.</p>');}
-      catch(err){$('#telegramPasswordError').textContent=SB.ruError(err);b.disabled=false;}
+  if(result.is_new)promptTelegramPasswordSetup();
+  return true;
+}
+
+function setupTelegramMiniAppUi(){
+  const tg=window.Telegram?.WebApp;
+  if(!tg)return;
+  try{
+    tg.ready();
+    tg.expand();
+    if(typeof tg.setHeaderColor==='function')tg.setHeaderColor('#080b12');
+    if(typeof tg.setBackgroundColor==='function')tg.setBackgroundColor('#080b12');
+    document.documentElement.classList.add('klb-telegram-miniapp');
+    const applyViewport=()=>{
+      const h=Number(tg.viewportStableHeight||tg.viewportHeight||0);
+      if(h>0)document.documentElement.style.setProperty('--tg-viewport-stable-height',`${Math.round(h)}px`);
     };
+    applyViewport();
+    tg.onEvent?.('viewportChanged',applyViewport);
+  }catch(e){console.warn('KLB Telegram WebApp UI setup:',e)}
+}
+
+function promptTelegramPasswordSetup(){
+  modal('Задай пароль',`<p class="modal-lead">Аккаунт создан через Telegram. Придумай пароль, чтобы при желании входить на KLB STORE также по логину и паролю.</p><form id="telegramPasswordForm" class="modal-form"><label>Новый пароль<input name="password" type="password" minlength="6" required autocomplete="new-password"></label><label>Повтори пароль<input name="confirm" type="password" minlength="6" required autocomplete="new-password"></label><p class="form-error" id="telegramPasswordError"></p><button class="primary-action">Сохранить пароль</button><button type="button" class="link-action" id="skipTelegramPassword">Позже</button></form>`);
+  $('#skipTelegramPassword').onclick=closeModal;
+  $('#telegramPasswordForm').onsubmit=async e=>{
+    e.preventDefault();const f=e.currentTarget;
+    if(f.elements.password.value!==f.elements.confirm.value){$('#telegramPasswordError').textContent='Пароли не совпадают.';return;}
+    const b=f.querySelector('button.primary-action');b.disabled=true;
+    try{const {error}=await SB.client.auth.updateUser({password:f.elements.password.value});if(error)throw error;modal('Готово','<p class="modal-lead">Пароль сохранён. Теперь можно входить через Telegram или по логину и паролю.</p>');}
+    catch(err){$('#telegramPasswordError').textContent=SB.ruError(err);b.disabled=false;}
+  };
+}
+
+async function handleTelegramMiniAppStartup(force=false){
+  const tg=window.Telegram?.WebApp;
+  const initData=typeof tg?.initData==='string'?tg.initData:'';
+  if(!tg||!initData)return false;
+  setupTelegramMiniAppUi();
+  if(!SB)throw new Error('KLB STORE не подключён к Supabase.');
+  const session=await SB.session();
+  if(session?.user){
+    const linked=await SB.linkTelegramMiniApp(initData);
+    window.KLB_TELEGRAM_LINKED_IN_MINIAPP=true;
+    await refreshProfile();
+    if(!current)throw new Error('Telegram привязан, но профиль KLB STORE не загрузился.');
+    notify(linked?.already_linked?'Telegram уже привязан к этому аккаунту.':'Telegram привязан к текущему аккаунту KLB STORE.');
+  }else{
+    const result=await SB.telegramMiniAppLogin(initData);
+    await refreshProfile();
+    if(!current)throw new Error('Telegram подтвердил пользователя, но профиль KLB STORE не загрузился.');
+    window.KLB_TELEGRAM_LINKED_IN_MINIAPP=true;
+    notify(result.is_new?'Аккаунт KLB STORE создан через Telegram!':'Вход в KLB STORE через Telegram выполнен.');
+    if(result.is_new)promptTelegramPasswordSetup();
   }
+  await loadCatalog();
+  if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady();
   return true;
 }
 
@@ -332,9 +382,9 @@ async function showProfile(){
   try{
     const data=await SB.profileDetails(current.id),p=data.profile,st=data.stats||{};
     const activePromo=await SB.myActiveMarketplacePromo();
-    modal('Мой профиль',`<div class="funpay-profile-shell"><div class="profile-card"><div class="profile-avatar-large">${esc((p.username||'?')[0].toUpperCase())}</div><div><h3>${esc(p.username)}</h3><span class="profile-role">${p.role==='admin'?'Администратор':p.role==='seller'?'Продавец':Number(p.moderator_level||0)>0?'Модератор':'Пользователь'}</span></div></div><form id="profileUsernameForm" class="profile-username-form"><label>Никнейм и логин<input name="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" required value="${esc(p.username)}"></label><button class="secondary-action" type="submit">Изменить ник и логин</button><small>После сохранения вход по старому нику перестанет работать.</small></form><div class="profile-stats"><div><b>${Number(st.completed_purchases||0)}</b><span>Покупки завершены</span></div><div><b>${Number(st.completed_sales||0)}</b><span>Продажи завершены</span></div><div><b>${Number(st.average_rating||0).toFixed(2)} ★</b><span>Рейтинг · ${Number(st.reviews_count||0)} отзывов</span></div></div><form id="profileBioForm" class="modal-form"><label>О себе / описание профиля<textarea name="bio" maxlength="1000" rows="4" placeholder="Расскажи о себе, товарах или услугах">${esc(p.bio||'')}</textarea></label><p class="form-error" id="profileBioError"></p><button class="primary-action" type="submit">Сохранить описание</button></form><section class="profile-promo-card"><div><b>Промокоды KLB STORE</b><p>Активируй код здесь — скидка автоматически применится к следующей покупке с баланса.</p></div>${activePromo?`<div class="profile-promo-active">Активирован: <b>${esc(activePromo.code)}</b> · ${activePromo.discount_type==='percent'?`${Number(activePromo.discount_value)}%`:`${Number(activePromo.discount_value).toLocaleString('ru-RU')} ₽`} скидки</div>`:'<div class="profile-promo-inactive">Промокод пока не активирован</div>'}<div class="profile-promo-actions"><button class="secondary-action" id="profilePromoActivate">${activePromo?'Заменить промокод':'Активировать промокод'}</button>${activePromo?'<button class="text-btn" id="profilePromoDeactivate">Снять промокод</button>':''}</div></section><div class="profile-details"><p><b>На KLB STORE с:</b> ${new Date(p.created_at).toLocaleDateString('ru-RU')}</p><p><b>Статус:</b> ${p.status==='blocked'?'Заблокирован':'Активен'}</p><p><b>Доступный баланс:</b> ${wallet(current.id).toLocaleString('ru-RU')} ₽</p><button class="secondary-action" id="profileWalletOpen">Управление балансом</button><button class="secondary-action" id="profileTelegramConnect">Привязать Telegram</button></div><h3 class="section-subtitle">Последние отзывы</h3>${data.reviews.length?`<div class="review-list">${data.reviews.slice(0,5).map(r=>`<article class="review-item"><b>${esc(r.reviewer)} · ${'★'.repeat(Number(r.rating))}${'☆'.repeat(5-Number(r.rating))}</b><p>${esc(r.comment||'Без комментария')}</p><small>${new Date(r.created_at).toLocaleDateString('ru-RU')}</small></article>`).join('')}</div>`:'<p class="modal-lead">Отзывов пока нет.</p>'}<div class="modal-actions"><button class="primary-action" id="profileDeals">Мои сделки</button><button class="secondary-action" id="profileWallet">Кошелёк</button>${current.role==='seller'?'<button class="secondary-action" id="profileSeller">Панель продавца</button>':''}${current.role==='admin'?'<button class="secondary-action" id="profileStore">Объявления KLB STORE</button>':''}${(current.role==='admin'||Number(current.moderator_level||0)>0)?'<button class="secondary-action" id="profileAdmin">Админ-панель</button>':''}</div></div>`);
+    modal('Мой профиль',`<div class="funpay-profile-shell"><div class="profile-card"><div class="profile-avatar-large">${esc((p.username||'?')[0].toUpperCase())}</div><div><h3>${esc(p.username)}</h3><span class="profile-role">${p.role==='admin'?'Администратор':p.role==='seller'?'Продавец':Number(p.moderator_level||0)>0?'Модератор':'Пользователь'}</span></div></div><form id="profileUsernameForm" class="profile-username-form"><label>Никнейм и логин<input name="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" required value="${esc(p.username)}"></label><button class="secondary-action" type="submit">Изменить ник и логин</button><small>После сохранения вход по старому нику перестанет работать.</small></form><div class="profile-stats"><div><b>${Number(st.completed_purchases||0)}</b><span>Покупки завершены</span></div><div><b>${Number(st.completed_sales||0)}</b><span>Продажи завершены</span></div><div><b>${Number(st.average_rating||0).toFixed(2)} ★</b><span>Рейтинг · ${Number(st.reviews_count||0)} отзывов</span></div></div><form id="profileBioForm" class="modal-form"><label>О себе / описание профиля<textarea name="bio" maxlength="1000" rows="4" placeholder="Расскажи о себе, товарах или услугах">${esc(p.bio||'')}</textarea></label><p class="form-error" id="profileBioError"></p><button class="primary-action" type="submit">Сохранить описание</button></form><section class="profile-promo-card"><div><b>Промокоды KLB STORE</b><p>Активируй код здесь — скидка автоматически применится к следующей покупке с баланса.</p></div>${activePromo?`<div class="profile-promo-active">Активирован: <b>${esc(activePromo.code)}</b> · ${activePromo.discount_type==='percent'?`${Number(activePromo.discount_value)}%`:`${Number(activePromo.discount_value).toLocaleString('ru-RU')} ₽`} скидки</div>`:'<div class="profile-promo-inactive">Промокод пока не активирован</div>'}<div class="profile-promo-actions"><button class="secondary-action" id="profilePromoActivate">${activePromo?'Заменить промокод':'Активировать промокод'}</button>${activePromo?'<button class="text-btn" id="profilePromoDeactivate">Снять промокод</button>':''}</div></section><div class="profile-details"><p><b>На KLB STORE с:</b> ${new Date(p.created_at).toLocaleDateString('ru-RU')}</p><p><b>Статус:</b> ${p.status==='blocked'?'Заблокирован':'Активен'}</p><p><b>Доступный баланс:</b> ${wallet(current.id).toLocaleString('ru-RU')} ₽</p><button class="secondary-action" id="profileWalletOpen">Управление балансом</button><button class="secondary-action" id="profileTelegramConnect">${window.KLB_TELEGRAM_LINKED_IN_MINIAPP?'Telegram подключён':'Привязать Telegram'}</button></div><h3 class="section-subtitle">Последние отзывы</h3>${data.reviews.length?`<div class="review-list">${data.reviews.slice(0,5).map(r=>`<article class="review-item"><b>${esc(r.reviewer)} · ${'★'.repeat(Number(r.rating))}${'☆'.repeat(5-Number(r.rating))}</b><p>${esc(r.comment||'Без комментария')}</p><small>${new Date(r.created_at).toLocaleDateString('ru-RU')}</small></article>`).join('')}</div>`:'<p class="modal-lead">Отзывов пока нет.</p>'}<div class="modal-actions"><button class="primary-action" id="profileDeals">Мои сделки</button><button class="secondary-action" id="profileWallet">Кошелёк</button>${current.role==='seller'?'<button class="secondary-action" id="profileSeller">Панель продавца</button>':''}${current.role==='admin'?'<button class="secondary-action" id="profileStore">Объявления KLB STORE</button>':''}${(current.role==='admin'||Number(current.moderator_level||0)>0)?'<button class="secondary-action" id="profileAdmin">Админ-панель</button>':''}</div></div>`);
     $('#profileUsernameForm').onsubmit=async e=>{e.preventDefault();const field=e.currentTarget.elements.username,button=e.currentTarget.querySelector('button'),name=field.value.trim();button.disabled=true;try{await SB.updateMyUsername(name);current.username=name;refreshHeader();notify('Никнейм и логин изменены');await showProfile()}catch(err){notify(SB.ruError(err));button.disabled=false}};
-    $('#profileTelegramConnect').onclick=async()=>{try{const code=await SB.createTelegramLinkCode(),bot=(window.KLB_SUPABASE_CONFIG?.telegramBotUsername||'').replace(/^@/,'');if(!bot||bot==='YOUR_BOT_USERNAME'){modal('Привязка Telegram',`<p class="modal-lead">Сначала укажи публичный username бота в supabase-config.js.</p><p>Код для привязки: <b>${esc(code)}</b></p>`);return}const link=`https://t.me/${bot}?start=${encodeURIComponent(code)}`;modal('Привязка Telegram',`<p class="modal-lead">Открой бота и нажми Start. После этого бот сможет присылать уведомления о новых заказах.</p><a class="primary-action telegram-connect-link" href="${link}" target="_blank" rel="noopener">Открыть Telegram-бота</a><p>Код действует 15 минут.</p>`)}catch(err){notify(SB.ruError(err))}};
+    $('#profileTelegramConnect').onclick=async()=>{if(window.KLB_TELEGRAM_LINKED_IN_MINIAPP){notify('Telegram подключён к этому аккаунту.');return}try{const code=await SB.createTelegramLinkCode(),bot=(window.KLB_SUPABASE_CONFIG?.telegramBotUsername||'').replace(/^@/,'' );if(!bot||bot==='YOUR_BOT_USERNAME'){modal('Привязка Telegram',`<p class="modal-lead">Сначала укажи публичный username бота в supabase-config.js.</p><p>Код для привязки: <b>${esc(code)}</b></p>`);return}const link=`https://t.me/${bot}?start=${encodeURIComponent(code)}`;modal('Привязка Telegram',`<p class="modal-lead">Открой бота и нажми Start. После этого бот сможет присылать уведомления о новых заказах.</p><a class="primary-action telegram-connect-link" href="${link}" target="_blank" rel="noopener">Открыть Telegram-бота</a><p>Код действует 15 минут.</p>`)}catch(err){notify(SB.ruError(err))}};
     $('#profileBioForm').onsubmit=async e=>{e.preventDefault();const field=e.currentTarget.elements.bio,btn=e.currentTarget.querySelector('button');btn.disabled=true;try{await SB.updateMyBio(field.value);notify('Описание профиля сохранено');await showProfile()}catch(err){$('#profileBioError').textContent=SB.ruError(err);btn.disabled=false}};
     $('#profilePromoActivate').onclick=openPromoActivationDialog;
     if($('#profilePromoDeactivate'))$('#profilePromoDeactivate').onclick=async()=>{const b=$('#profilePromoDeactivate');b.disabled=true;try{await SB.deactivateMarketplacePromo();notify('Промокод снят');await showProfile()}catch(err){notify(SB.ruError(err));b.disabled=false}};
@@ -495,5 +545,12 @@ async function loadCatalog(){if(!SB)return;try{products=(await SB.catalog()).map
 const telegramCallbackParams=new URLSearchParams(location.search);
 if(telegramCallbackParams.has('code')||telegramCallbackParams.has('error')){
   handleTelegramOidcCallback().catch(error=>{console.error('KLB Telegram OIDC callback:',error);notify(SB?.ruError?SB.ruError(error):String(error.message||error));refreshProfile().then(refreshHeader);});
+}else if(window.Telegram?.WebApp?.initData){
+  handleTelegramMiniAppStartup().catch(async error=>{
+    console.error('KLB Telegram Mini App auth:',error);
+    try{await refreshProfile();await loadCatalog();}catch{}
+    modal('Не удалось войти через Telegram',`<p class="form-error">${esc(SB?.ruError?SB.ruError(error):String(error.message||error))}</p><p class="modal-lead">Проверь публикацию функции telegram-auth и секрет TELEGRAM_BOT_TOKEN в Supabase.</p><button class="primary-action" id="telegramMiniAppRetry">Повторить вход</button>`);
+    $('#telegramMiniAppRetry').onclick=()=>handleTelegramMiniAppStartup(true).catch(e=>notify(SB?.ruError?SB.ruError(e):String(e.message||e)));
+  });
 }else if(SB)refreshProfile().then(()=>{refreshHeader();return loadCatalog()}).then(()=>{if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()});
 })();
