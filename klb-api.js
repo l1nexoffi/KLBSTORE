@@ -89,8 +89,22 @@
   const notifyAdmins = async (kind, recordId) => {
     if (!recordId) return null;
     try {
-      const { data, error } = await sb.functions.invoke('telegram-admin-notify', { body: { kind, record_id: recordId } });
-      if (error) { console.warn('KLB Telegram admin notification failed:', error); return null; }
+      // Pass the current user's access token explicitly. The Edge Function performs
+      // its own auth.getUser() validation; config.toml disables only gateway JWT
+      // pre-validation to avoid gateway 401s with newer Supabase signing keys.
+      const session = await B.session();
+      if (!session?.access_token) {
+        console.warn('KLB Telegram admin notification skipped: no active user session.');
+        return null;
+      }
+      const { data, error } = await sb.functions.invoke('telegram-admin-notify', {
+        body: { kind, record_id: recordId },
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      });
+      if (error) {
+        console.warn('KLB Telegram admin notification failed:', error);
+        return null;
+      }
       if (data && Number(data.sent || 0) === 0) console.warn('KLB Telegram admin notification was not delivered:', data.reason || 'No linked admin Telegram accounts');
       return data;
     } catch (error) {

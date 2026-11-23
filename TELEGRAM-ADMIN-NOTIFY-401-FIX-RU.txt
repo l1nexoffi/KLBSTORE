@@ -1,0 +1,25 @@
+ИСПРАВЛЕНИЕ 401 ДЛЯ TELEGRAM-ADMIN-NOTIFY
+
+Что исправлено:
+1. klb-api.js теперь явно передаёт access_token текущей сессии в Authorization: Bearer ... при вызове telegram-admin-notify.
+2. В supabase/config.toml для telegram-admin-notify выставлено verify_jwt = false.
+3. Сама Edge Function НЕ отключает авторизацию: она по-прежнему проверяет переданный токен через Supabase Auth auth.getUser(), а затем проверяет, что запись принадлежит отправившему её пользователю.
+
+ЧТО НУЖНО СДЕЛАТЬ ПОСЛЕ ЗАГРУЗКИ ОБНОВЛЁННОГО САЙТА
+
+1. Обновить файлы сайта на GitHub Pages (включая klb-api.js).
+2. В терминале из корня папки проекта выполнить:
+
+   supabase functions deploy telegram-admin-notify --no-verify-jwt
+
+   Эта команда нужна, чтобы Supabase перестал отклонять JWT на шлюзе до запуска функции. Проверка пользователя остаётся внутри функции.
+3. После деплоя создать обычным пользователем тестовую заявку на пополнение на сайте.
+4. В Supabase открыть Edge Functions -> telegram-admin-notify -> Logs.
+
+ОЖИДАЕМЫЙ РЕЗУЛЬТАТ
+
+Вместо POST 401 должен появиться успешный POST 200. Если Telegram-сообщение всё ещё не придёт, в ответе/логах уже будет конкретная причина (например, нет привязанного Telegram у активного администратора или ошибка Telegram Bot API).
+
+ВАЖНО
+
+Не добавляйте service_role key в браузерный код и не отключайте проверку токена внутри index.ts. TELEGRAM_BOT_TOKEN и SUPABASE_SERVICE_ROLE_KEY должны оставаться только в Secrets Edge Functions.
