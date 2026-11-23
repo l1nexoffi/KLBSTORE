@@ -1,0 +1,91 @@
+KLB STORE — АДМИНСКАЯ ИНСТРУКЦИЯ: БАЛАНС И СТАТИСТИКА
+
+1) СБРОС БАЛАНСА ПОЛЬЗОВАТЕЛЯ (ТОЛЬКО ТЕСТОВЫЙ АККАУНТ)
+
+Сначала выполните ПРОВЕРКУ. Замените USERNAME_HERE на точный username:
+
+SELECT p.id, p.username, w.available, w.bonus_available, w.reserved, w.escrow
+FROM public.profiles p
+LEFT JOIN public.wallets w ON w.user_id = p.id
+WHERE lower(p.username) = lower('USERNAME_HERE');
+
+Проверьте, что нет незавершённых выводов и заказов:
+
+SELECT id, amount, status, created_at
+FROM public.withdrawal_requests
+WHERE user_id = (SELECT id FROM public.profiles WHERE lower(username)=lower('USERNAME_HERE'))
+  AND status = 'pending';
+
+SELECT id, listing_title, gross_amount, status, created_at
+FROM public.marketplace_orders
+WHERE (buyer_id = (SELECT id FROM public.profiles WHERE lower(username)=lower('USERNAME_HERE'))
+    OR seller_id = (SELECT id FROM public.profiles WHERE lower(username)=lower('USERNAME_HERE')))
+  AND status IN ('paid','seller_completed','disputed');
+
+Если есть незавершённые заявки на вывод или заказы, НЕ обнуляйте reserved/escrow — сначала обработайте их обычным способом через админ-панель.
+
+Когда это тестовый пользователь, и незавершённых операций НЕТ, выполните блок ниже. Он оставляет аккаунт, профиль и историю, обнуляет все четыре корзины кошелька и записывает корректировку в ledger:
+
+BEGIN;
+DO $reset_wallet$
+DECLARE
+  v_user uuid;
+  v_username text := 'USERNAME_HERE'; -- замените на username
+  v_wallet public.wallets%ROWTYPE;
+  v_total numeric(14,2);
+BEGIN
+  SELECT id INTO v_user FROM public.profiles WHERE lower(username)=lower(v_username);
+  IF v_user IS NULL THEN RAISE EXCEPTION 'Пользователь не найден'; END IF;
+
+  IF EXISTS (SELECT 1 FROM public.withdrawal_requests WHERE user_id=v_user AND status='pending') THEN
+    RAISE EXCEPTION 'Есть незавершённая заявка на вывод. Сначала обработайте её.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.marketplace_orders
+             WHERE (buyer_id=v_user OR seller_id=v_user)
+               AND status IN ('paid','seller_completed','disputed')) THEN
+    RAISE EXCEPTION 'Есть незавершённый заказ/спор. Сначала завершите или рассмотрите его.';
+  END IF;
+
+  SELECT * INTO v_wallet FROM public.wallets WHERE user_id=v_user FOR UPDATE;
+  IF NOT FOUND THEN RAISE NOTICE 'У пользователя нет строки кошелька; сбрасывать нечего.'; RETURN; END IF;
+  v_total := coalesce(v_wallet.available,0)+coalesce(v_wallet.bonus_available,0)
+           +coalesce(v_wallet.reserved,0)+coalesce(v_wallet.escrow,0);
+
+  UPDATE public.wallets
+  SET available=0, bonus_available=0, reserved=0, escrow=0, updated_at=now()
+  WHERE user_id=v_user;
+
+  IF v_total <> 0 THEN
+    INSERT INTO public.wallet_ledger(user_id, operation, amount, note)
+    VALUES (v_user, 'adjustment', -v_total,
+      'Ручной сброс тестового баланса администратором через SQL Editor. До сброса: available='
+      || coalesce(v_wallet.available,0)::text || ', bonus='
+      || coalesce(v_wallet.bonus_available,0)::text || ', reserved='
+      || coalesce(v_wallet.reserved,0)::text || ', escrow='
+      || coalesce(v_wallet.escrow,0)::text);
+  END IF;
+END;
+$reset_wallet$;
+COMMIT;
+
+ВАЖНО: сброс баланса НЕ удаляет пользователя и НЕ гарантирует, что Auth user можно удалить. На аккаунт могут ссылаться заказы, отзывы, споры, партнёрские начисления, сообщения и ledger. Для реального маркетплейса безопаснее заблокировать аккаунт и сохранить финансовую историю. Не удаляйте marketplace_orders, wallet_ledger или платформенные комиссии ради удаления профиля.
+
+2) СБРОС ОТОБРАЖАЕМОЙ СТАТИСТИКИ ПРОДАЖ
+
+Новая миграция создаёт таблицу public.klb_marketplace_stats_control, при установке она НЕ сбрасывает текущие показатели (начальная дата = -infinity). Чтобы начать отображаемые счётчики заново, выполните:
+
+UPDATE public.klb_marketplace_stats_control
+SET stats_started_at = now(), updated_at = now(), updated_by = NULL
+WHERE id = true;
+
+После этого:
+- финансовые показатели администратора за 7/30 дней будут считаться с момента сброса (внутри соответствующего окна 7/30 дней);
+- публичные счётчики завершённых покупок/продаж и отзывы в профилях будут считаться с этой даты;
+- старые заказы, транзакции, выплаты и отзывы НЕ удаляются;
+- партнёрские исторические заработки и баланс остаются в финансовой истории и не обнуляются.
+
+Текущие 7/30-дневные показатели и так являются скользящими периодами. Данный сброс в первую очередь нужен для тестового запуска/перехода к новому сезону статистики.
+
+3) УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ
+
+Обнуление кошелька — это не то же самое, что удаление Auth user. Если пользователь участвовал в заказах/чатах/отзывах, удаление может быть заблокировано FK-ограничениями или уничтожить связанную историю. Для действующего магазина рекомендуемый вариант: заблокировать профиль в админ-панели и сохранить историю операций.

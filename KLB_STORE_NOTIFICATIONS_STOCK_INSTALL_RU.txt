@@ -1,0 +1,76 @@
+KLB STORE — TELEGRAM NOTIFICATIONS + STOCK LIMIT FIX
+
+В комплекте:
+- обновлённый сайт (klb_full/);
+- SQL KLB_STORE_notifications_inventory_fix.sql;
+- Edge Function telegram-order-notify (обновлённая);
+- Edge Function telegram-admin-notify (новая);
+- KLB_STORE_ADMIN_BALANCE_AND_STATS_GUIDE_RU.txt с безопасными инструкциями по тестовому балансу и сбросу статистики.
+
+A. SUPABASE SQL
+1. Сделайте резервную копию проекта.
+2. Убедитесь, что уже применены существующие миграции KLB: wallet-marketplace-migration, marketplace-escrow-chat, marketplace-trust-safety, marketplace-categories-promotions, marketplace-referral-partners и marketplace-bonus-balance.
+3. Выполните KLB_STORE_notifications_inventory_fix.sql в Supabase → SQL Editor → New query → Run.
+4. Миграция не удаляет заказы, кошельки или историю. Она ограничивает остаток объявления 0..30, исправляет триггер, чтобы покупка не отправляла объявление обратно на модерацию, и добавляет безопасную дату начала отображаемой статистики.
+5. При повторном запуске миграция переустанавливает ограничение остатков и функции статистики, не сбрасывая дату статистики и не удаляя транзакции.
+
+B. GITHUB PAGES
+1. Распакуйте KLB_STORE_notifications_inventory_update.zip.
+2. Загрузите содержимое klb_full в корень репозитория GitHub Pages с заменой файлов.
+3. НЕ заменяйте свой supabase-config.js.
+4. Дождитесь окончания GitHub Pages deployment и обновите страницу Ctrl+F5.
+
+C. SUPABASE EDGE FUNCTIONS — ДВЕ ФУНКЦИИ
+В Supabase → Edge Functions → Secrets должны уже быть TELEGRAM_BOT_TOKEN и SITE_URL. Новых секретов не требуется.
+
+1) Обновить telegram-order-notify:
+- Edge Functions → telegram-order-notify → Code.
+- Откройте klb_full/supabase/functions/telegram-order-notify/index.ts.
+- Замените весь index.ts этим кодом и нажмите Deploy.
+- Settings: Verify JWT / Verify JWT with legacy secret должен быть ON, потому что функцию вызывает сайт от имени авторизованного покупателя. Функция проверяет Supabase-сессию и что заказ принадлежит этому покупателю.
+
+2) Создать или обновить telegram-admin-notify:
+- Если функции ещё нет: Edge Functions → Deploy a new function → Via Editor.
+- Function name: telegram-admin-notify.
+- Откройте klb_full/supabase/functions/telegram-admin-notify/index.ts, скопируйте код, замените шаблон index.ts и нажмите Deploy.
+- Если функция уже существует, откройте её Code и замените index.ts этим кодом.
+- Settings: Verify JWT / Verify JWT with legacy secret должен быть ON, потому что уведомления отправляются после действий авторизованного пользователя. Сервер дополнительно проверяет владельца заявки/объявления/жалобы.
+
+ВАЖНО: у telegram-webhook Verify JWT должен оставаться OFF — Telegram не присылает Supabase JWT. Не меняйте его настройку из-за этих двух функций.
+
+D. ПРИВЯЗКА TELEGRAM ПОЛУЧАТЕЛЕЙ
+1. Продавец должен привязать Telegram в профиле KLB STORE.
+2. В Telegram нужно открыть @KLBSTOREBOT_bot и нажать Start после создания кода привязки.
+3. Администратор также должен привязать собственный Telegram к своему admin-профилю, чтобы получать админские уведомления.
+4. Проверьте, что в базе есть Telegram ID. Выполните безопасный диагностический запрос:
+
+SELECT p.username, p.role,
+       (a.telegram_chat_id IS NOT NULL OR a.telegram_user_id IS NOT NULL) AS telegram_chat_ready,
+       a.linked_at
+FROM public.profiles p
+LEFT JOIN public.klb_telegram_accounts a ON a.user_id = p.id
+WHERE p.role = 'admin' OR p.username = 'YOUR_SELLER_USERNAME'
+ORDER BY p.role, p.username;
+
+Замените YOUR_SELLER_USERNAME на логин продавца. Если telegram_chat_ready = false, повторите привязку в профиле и нажмите Start в боте.
+
+E. ЧТО ПРИХОДИТ В TELEGRAM
+Продавцу после покупки: username покупателя, название товара, количество, оплаченная сумма, время (МСК) и кнопка «Открыть чат с покупателем». Ссылка ведёт на KLB STORE с параметром нужного чата.
+Администратору: новая заявка на пополнение, отметка пользователя «Я оплатил», заявка продавца, новое объявление на модерации, жалоба на аккаунт и спор по заказу. Кнопка ведёт в соответствующий раздел admin.html?view=...
+Уведомления приходят администраторам с активным профилем и привязанным Telegram.
+
+F. ОСТАТОК ТОВАРА
+- При создании объявления можно указать 1..30 единиц.
+- Каждая успешная покупка уменьшает остаток на количество покупки.
+- Изменение только stock больше не отправляет объявление повторно на модерацию.
+- При stock=0 объявление автоматически не показывается в публичном каталоге (каталог фильтрует stock > 0), но остаётся в списке продавца.
+- Продавец может пополнить остаток до 30; если контент объявления не менялся, повторная модерация не нужна.
+- Изменение названия/описания/категории/цены/изображения всё ещё отправляет товар на модерацию.
+
+G. ПРОВЕРКА
+1. Купите тестовый товар продавца с привязанным Telegram: ему должно прийти сообщение с кнопкой прямого чата.
+2. Создайте тестовую заявку продавца, новое объявление, заявку на пополнение и тестовую жалобу — администратору должны прийти уведомления. Для пополнения будет отдельное сообщение при создании заявки и после нажатия пользователем «Я оплатил».
+3. Создайте объявление с количеством 10, купите 1 штуку: остаток должен стать 9, статус остаться «Активно».
+4. Купите последнюю штуку: остаток станет 0, объявление исчезнет из каталога, но не удалится из кабинета продавца.
+
+ПРИМЕЧАНИЕ: Telegram-уведомления отправляются как дополнительный эффект после успешного действия. Если функция не развёрнута или у получателя не привязан Telegram, сама покупка/заявка остаётся успешной; причина видна в Edge Function Logs.

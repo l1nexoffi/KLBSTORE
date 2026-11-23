@@ -20,6 +20,8 @@
     'You can promote only your own listing': 'Можно продвигать только собственные объявления.',
     'Listing unavailable': 'Объявление больше недоступно.',
     'Listing price changed': 'Цена изменилась. Обнови каталог и попробуй ещё раз.',
+    'Listing stock must be between 1 and 30': 'Количество в объявлении должно быть от 1 до 30.',
+    'Listing stock must be between 0 and 30': 'Остаток должен быть от 0 до 30.',
     'Not enough stock': 'Недостаточно товара в наличии.',
     'Cannot buy your own listing': 'Нельзя купить собственное объявление.',
     'Invalid quantity': 'Некорректное количество товара.',
@@ -83,6 +85,19 @@
   };
   const must = ({ data, error }) => { if (error) throw error; return data; };
   const uid = async () => { const s = await B.session(); if (!s) throw new Error('Authentication required'); return s.user.id; };
+  // Telegram admin notifications are best-effort: they never roll back a successful marketplace action.
+  const notifyAdmins = async (kind, recordId) => {
+    if (!recordId) return null;
+    try {
+      const { data, error } = await sb.functions.invoke('telegram-admin-notify', { body: { kind, record_id: recordId } });
+      if (error) { console.warn('KLB Telegram admin notification failed:', error); return null; }
+      if (data && Number(data.sent || 0) === 0) console.warn('KLB Telegram admin notification was not delivered:', data.reason || 'No linked admin Telegram accounts');
+      return data;
+    } catch (error) {
+      console.warn('KLB Telegram admin notification failed:', error);
+      return null;
+    }
+  };
 
   const DEP = { pending: 'Ожидает оплаты', checking: 'Проверка', approved: 'Подтверждено', rejected: 'Отклонено', expired: 'Истекла' };
   const WDR = { pending: 'Ожидает выплаты', paid: 'Выплачено', rejected: 'Отклонено, средства возвращены' };
@@ -112,8 +127,15 @@
       const row = Array.isArray(r) ? r[0] : r;
       return { bank: row?.bank || '', details: row?.card_or_details || '' };
     },
-    async createDeposit(amount) { return must(await sb.rpc('create_deposit_request', { p_amount: amount })); },
-    async markDepositChecking(id) { must(await sb.rpc('mark_deposit_checking', { p_request: id })); },
+    async createDeposit(amount) {
+      const row = must(await sb.rpc('create_deposit_request', { p_amount: amount }));
+      void notifyAdmins('deposit_created', row?.id);
+      return row;
+    },
+    async markDepositChecking(id) {
+      must(await sb.rpc('mark_deposit_checking', { p_request: id }));
+      void notifyAdmins('deposit_checking', id);
+    },
     async createWithdrawal({ method, amount, bank, phone, address }) {
       return must(await sb.rpc('create_withdrawal_request', {
         p_method: method === 'usdt' ? 'usdt_trc20' : (method === 'sbp' ? 'sbp_phone' : 'bank_phone'), p_amount: amount,
@@ -146,9 +168,11 @@
     async applyForSeller({ nickname, description, benefit, age, telegram }) {
       const id = await uid();
       // The deployed KLB schema uses username + benefits (plural), not nickname + benefit.
-      return must(await sb.from('seller_applications').insert({
+      const row = must(await sb.from('seller_applications').insert({
         user_id: id, username: nickname, description, benefits: benefit, age, telegram
       }).select().single());
+      void notifyAdmins('seller_application', row.id);
+      return row;
     },
 
     /* ---------- listings ---------- */
@@ -219,22 +243,39 @@
     },
     async createListing(v) {
       const id = await uid();
-      return must(await sb.from('seller_listings').insert({
+      const stock = Number(v.stock);
+      if (!Number.isInteger(stock) || stock < 1 || stock > 30) throw new Error('Listing stock must be between 1 and 30');
+      const row = must(await sb.from('seller_listings').insert({
         seller_id: id, title: v.title, description: v.description,
         category: v.category, catalog_category: v.catalog_category || 'other',
         catalog_subcategory: v.catalog_subcategory || 'other',
-        price: v.price, stock: v.stock, image_url: v.image_url || null
+        price: v.price, stock, image_url: v.image_url || null
       }).select().single());
+      void notifyAdmins('listing', row.id);
+      return row;
     },
-    async updateListing(listingId, patch) { return must(await sb.from('seller_listings').update(patch).eq('id', listingId).select().single()); },
+    async updateListing(listingId, patch) {
+      const next = { ...patch };
+      if (Object.prototype.hasOwnProperty.call(next, 'stock')) {
+        next.stock = Number(next.stock);
+        if (!Number.isInteger(next.stock) || next.stock < 0 || next.stock > 30) throw new Error('Listing stock must be between 0 and 30');
+      }
+      const row = must(await sb.from('seller_listings').update(next).eq('id', listingId).select().single());
+      // Notify only when product content was edited and the DB returned the listing to moderation.
+      const contentChanged = ['title', 'description', 'category', 'catalog_category', 'catalog_subcategory', 'price', 'image_url']
+        .some((key) => Object.prototype.hasOwnProperty.call(next, key));
+      if (contentChanged && row.status === 'pending') void notifyAdmins('listing', row.id);
+      return row;
+    },
 
     /* ---------- wallet checkout, escrow and order chats ---------- */
     async createMarketplaceOrder(listingId, quantity = 1, expectedUnitPrice = null) {
       const result = must(await sb.rpc('create_marketplace_order', { p_listing_id: listingId, p_quantity: quantity, p_expected_unit_price: expectedUnitPrice }));
       // Telegram notification is an auxiliary effect. A bot outage never reverses a successful checkout.
       try {
-        const { error } = await sb.functions.invoke('telegram-order-notify', { body: { order_id: result.order_id } });
+        const { data, error } = await sb.functions.invoke('telegram-order-notify', { body: { order_id: result.order_id } });
         if (error) console.warn('KLB Telegram seller notification could not be sent:', error);
+        else if (data && data.sent === false) console.warn('KLB Telegram seller notification was not delivered:', data.reason || 'Seller Telegram chat is not linked');
       } catch (err) { console.warn('KLB Telegram seller notification could not be sent:', err); }
       return result;
     },
@@ -290,9 +331,11 @@
       }));
     },
     async createDispute(orderId, reason, evidencePath = null) {
-      return must(await sb.rpc('create_marketplace_dispute', {
+      const id = must(await sb.rpc('create_marketplace_dispute', {
         p_order_id: orderId, p_reason: String(reason || '').trim(), p_evidence_path: evidencePath
       }));
+      void notifyAdmins('dispute', id);
+      return id;
     },
     async uploadModerationEvidence(file) {
       if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('Прикрепи изображение PNG, JPG или WEBP.');
@@ -305,10 +348,12 @@
       return path;
     },
     async createAccountReport(targetUserId, description, evidencePath = null, chatId = null) {
-      return must(await sb.rpc('create_marketplace_account_report', {
+      const id = must(await sb.rpc('create_marketplace_account_report', {
         p_target_user_id: targetUserId, p_description: String(description || '').trim(),
         p_evidence_path: evidencePath, p_chat_id: chatId
       }));
+      void notifyAdmins('account_report', id);
+      return id;
     },
     async profileDetails(userId) {
       const profile = must(await sb.from('profiles').select('id,username,role,status,bio,moderator_level,trading_disabled,created_at').eq('id', userId).single());
