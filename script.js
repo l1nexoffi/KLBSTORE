@@ -136,8 +136,8 @@ async function handleTelegramOidcCallback(){
   if(Date.now()-Number(saved.createdAt||0)>10*60*1000)throw new Error('Время входа Telegram истекло. Попробуй ещё раз.');
   if(!SB)throw new Error('Supabase не подключён.');
   const result=await SB.telegramLoginCode(code,saved.verifier,saved.redirectUri);
-  await refreshProfile(true);
-  if(!current)throw new Error('Telegram подтвердил вход, но профиль KLB STORE не загрузился. Проверь запись в profiles и права SELECT.');
+  await refreshProfile();
+  if(!current)throw new Error('Telegram подтвердил вход, но профиль KLB STORE не загрузился.');
   notify(result.is_new?'Аккаунт через Telegram создан!':'Вход через Telegram выполнен');
   if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady();
   if(result.is_new)promptTelegramPasswordSetup();
@@ -184,13 +184,13 @@ async function handleTelegramMiniAppStartup(force=false){
   if(session?.user){
     const linked=await SB.linkTelegramMiniApp(initData);
     window.KLB_TELEGRAM_LINKED_IN_MINIAPP=true;
-    await refreshProfile(true);
-    if(!current)throw new Error('Telegram привязан, но профиль KLB STORE не загрузился. Проверь запись в profiles и права SELECT.');
+    await refreshProfile();
+    if(!current)throw new Error('Telegram привязан, но профиль KLB STORE не загрузился.');
     notify(linked?.already_linked?'Telegram уже привязан к этому аккаунту.':'Telegram привязан к текущему аккаунту KLB STORE.');
   }else{
     const result=await SB.telegramMiniAppLogin(initData);
-    await refreshProfile(true);
-    if(!current)throw new Error('Telegram подтвердил пользователя, но профиль KLB STORE не загрузился. Проверь запись в profiles и права SELECT.');
+    await refreshProfile();
+    if(!current)throw new Error('Telegram подтвердил пользователя, но профиль KLB STORE не загрузился.');
     window.KLB_TELEGRAM_LINKED_IN_MINIAPP=true;
     notify(result.is_new?'Аккаунт KLB STORE создан через Telegram!':'Вход в KLB STORE через Telegram выполнен.');
     if(result.is_new)promptTelegramPasswordSetup();
@@ -200,15 +200,13 @@ async function handleTelegramMiniAppStartup(force=false){
   return true;
 }
 
-async function refreshProfile(strict=false){
-  if(!SB)return null;
+async function refreshProfile(){
+  if(!SB)return;
   try{
     const p=await SB.profile();
     if(!p||p.status==='blocked'){
       if(p)await SB.logout();
-      current=null;remoteFavoriteIds=new Set();walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();
-      if(p?.status==='blocked'&&strict)throw new Error('Аккаунт KLB STORE заблокирован.');
-      return null;
+      current=null;remoteFavoriteIds=new Set();walletBal=0;walletReserved=0;walletEscrow=0;refreshHeader();return;
     }
     current={id:p.id,username:p.username,role:p.role,moderator_level:Number(p.moderator_level||0)};
     try{
@@ -217,12 +215,7 @@ async function refreshProfile(strict=false){
     }catch(favError){remoteFavoriteIds=new Set();console.warn('KLB favorites load failed:',favError)}
     await refreshWallet();
     render();
-    return p;
-  }catch(e){
-    console.error('KLB profile hydration failed:',e);
-    if(strict)throw e;
-    return null;
-  }
+  }catch(e){console.error(e)}
 }
 async function refreshWallet(){if(!SB||!current)return;try{const w=await SB.wallet();walletBal=w.available;walletReserved=w.reserved;walletEscrow=w.escrow||0}catch(e){console.error(e)}refreshHeader()}
 async function sbAuth(signup,username,password,confirm,err){err.textContent='';const btn=document.querySelector('#authForm button[type=submit]');btn.disabled=true;try{if(signup){if(!/^[a-zA-Z0-9_]{3,24}$/.test(username))throw new Error('Логин: 3–24 символа, латиница, цифры и _');if(password.length<6)throw new Error('Пароль должен быть не короче 6 символов.');if(password!==confirm)throw new Error('Пароли не совпадают');await SB.register(username,password)}await SB.login(username,password);await refreshProfile();if(!current)throw new Error('Не удалось войти. Если аккаунт только что создан, отключи подтверждение email в настройках Supabase Auth.');closeModal();notify(signup?'Аккаунт создан. Добро пожаловать!':'Вход выполнен');if(sessionStorage.getItem(PENDING_CHAT))openPendingChatIfReady()}catch(e){err.textContent=SB.ruError(e);btn.disabled=false}}
@@ -433,15 +426,38 @@ async function showProfile(){
   try{
     const data=await SB.profileDetails(current.id),p=data.profile,st=data.stats||{};
     const activePromo=await SB.myActiveMarketplacePromo();
-    modal('Мой профиль',`<div class="funpay-profile-shell"><div class="profile-card"><div class="profile-avatar-large">${esc((p.username||'?')[0].toUpperCase())}</div><div><h3>${esc(p.username)}</h3><span class="profile-role">${p.role==='admin'?'Администратор':p.role==='seller'?'Продавец':Number(p.moderator_level||0)>0?'Модератор':'Пользователь'}</span></div></div><form id="profileUsernameForm" class="profile-username-form"><label>Никнейм и логин<input name="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" required value="${esc(p.username)}"></label><button class="secondary-action" type="submit">Изменить ник и логин</button><small>После сохранения вход по старому нику перестанет работать.</small></form><div class="profile-stats"><div><b>${Number(st.completed_purchases||0)}</b><span>Покупки завершены</span></div><div><b>${Number(st.completed_sales||0)}</b><span>Продажи завершены</span></div><div><b>${Number(st.average_rating||0).toFixed(2)} ★</b><span>Рейтинг · ${Number(st.reviews_count||0)} отзывов</span></div></div><form id="profileBioForm" class="modal-form"><label>О себе / описание профиля<textarea name="bio" maxlength="1000" rows="4" placeholder="Расскажи о себе, товарах или услугах">${esc(p.bio||'')}</textarea></label><p class="form-error" id="profileBioError"></p><button class="primary-action" type="submit">Сохранить описание</button></form><section class="profile-promo-card"><div><b>Промокоды KLB STORE</b><p>Активируй код здесь — скидка автоматически применится к следующей покупке с баланса.</p></div>${activePromo?`<div class="profile-promo-active">Активирован: <b>${esc(activePromo.code)}</b> · ${activePromo.discount_type==='percent'?`${Number(activePromo.discount_value)}%`:`${Number(activePromo.discount_value).toLocaleString('ru-RU')} ₽`} скидки</div>`:'<div class="profile-promo-inactive">Промокод пока не активирован</div>'}<div class="profile-promo-actions"><button class="secondary-action" id="profilePromoActivate">${activePromo?'Заменить промокод':'Активировать промокод'}</button>${activePromo?'<button class="text-btn" id="profilePromoDeactivate">Снять промокод</button>':''}</div></section><div class="profile-details"><p><b>На KLB STORE с:</b> ${new Date(p.created_at).toLocaleDateString('ru-RU')}</p><p><b>Статус:</b> ${p.status==='blocked'?'Заблокирован':'Активен'}</p><p><b>Доступный баланс:</b> ${wallet(current.id).toLocaleString('ru-RU')} ₽</p><button class="secondary-action" id="profileWalletOpen">Управление балансом</button><button class="secondary-action" id="profileTelegramConnect">${window.KLB_TELEGRAM_LINKED_IN_MINIAPP?'Telegram подключён':'Привязать Telegram'}</button></div><h3 class="section-subtitle">Последние отзывы</h3>${data.reviews.length?`<div class="review-list">${data.reviews.slice(0,5).map(r=>`<article class="review-item"><b>${esc(r.reviewer)} · ${'★'.repeat(Number(r.rating))}${'☆'.repeat(5-Number(r.rating))}</b><p>${esc(r.comment||'Без комментария')}</p><small>${new Date(r.created_at).toLocaleDateString('ru-RU')}</small></article>`).join('')}</div>`:'<p class="modal-lead">Отзывов пока нет.</p>'}<div class="modal-actions"><button class="primary-action" id="profileDeals">Мои сделки</button><button class="secondary-action" id="profileWallet">Кошелёк</button>${current.role==='seller'?'<button class="secondary-action" id="profileSeller">Панель продавца</button>':''}${current.role==='admin'?'<button class="secondary-action" id="profileStore">Объявления KLB STORE</button>':''}${(current.role==='admin'||Number(current.moderator_level||0)>0)?'<button class="secondary-action" id="profileAdmin">Админ-панель</button>':''}</div></div>`);
+    let partnerDashboard=null;try{partnerDashboard=await SB.partnerDashboard()}catch(err){console.warn('KLB partner dashboard is unavailable:',err)}
+    const profileRole=p.role==='admin'?(partnerDashboard?.partner?'Администратор · Партнёр':'Администратор'):partnerDashboard?.partner?'Партнёр':(p.role==='seller'?'Продавец':Number(p.moderator_level||0)>0?'Модератор':'Пользователь');
+    modal('Мой профиль',`<div class="funpay-profile-shell"><div class="profile-card"><div class="profile-avatar-large">${esc((p.username||'?')[0].toUpperCase())}</div><div><h3>${esc(p.username)}</h3><span class="profile-role">${esc(profileRole)}</span></div></div><form id="profileUsernameForm" class="profile-username-form"><label>Никнейм и логин<input name="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" required value="${esc(p.username)}"></label><button class="secondary-action" type="submit">Изменить ник и логин</button><small>После сохранения вход по старому нику перестанет работать.</small></form><div class="profile-stats"><div><b>${Number(st.completed_purchases||0)}</b><span>Покупки завершены</span></div><div><b>${Number(st.completed_sales||0)}</b><span>Продажи завершены</span></div><div><b>${Number(st.average_rating||0).toFixed(2)} ★</b><span>Рейтинг · ${Number(st.reviews_count||0)} отзывов</span></div></div><form id="profileBioForm" class="modal-form"><label>О себе / описание профиля<textarea name="bio" maxlength="1000" rows="4" placeholder="Расскажи о себе, товарах или услугах">${esc(p.bio||'')}</textarea></label><p class="form-error" id="profileBioError"></p><button class="primary-action" type="submit">Сохранить описание</button></form><section class="profile-promo-card"><div><b>Промокоды KLB STORE</b><p>Активируй код здесь — скидка автоматически применится к следующей покупке с баланса.</p></div>${activePromo?`<div class="profile-promo-active">Активирован: <b>${esc(activePromo.code)}</b> · ${activePromo.discount_type==='percent'?`${Number(activePromo.discount_value)}%`:`${Number(activePromo.discount_value).toLocaleString('ru-RU')} ₽`} скидки</div>`:'<div class="profile-promo-inactive">Промокод пока не активирован</div>'}<div class="profile-promo-actions"><button class="secondary-action" id="profilePromoActivate">${activePromo?'Заменить промокод':'Активировать промокод'}</button>${activePromo?'<button class="text-btn" id="profilePromoDeactivate">Снять промокод</button>':''}</div></section>${partnerDashboard?.partner?`<section class="partner-profile-card"><div><b>Партнёрская программа KLB STORE</b><p>Твой промокод, скидка покупателя, комиссия и статистика продаж.</p></div><button class="secondary-action" id="profilePartnerDashboard">Для партнёров</button></section>`:''}<div class="profile-details"><p><b>На KLB STORE с:</b> ${new Date(p.created_at).toLocaleDateString('ru-RU')}</p><p><b>Статус:</b> ${p.status==='blocked'?'Заблокирован':'Активен'}</p><p><b>Доступный баланс:</b> ${wallet(current.id).toLocaleString('ru-RU')} ₽</p><button class="secondary-action" id="profileWalletOpen">Управление балансом</button><button class="secondary-action" id="profileTelegramConnect">${window.KLB_TELEGRAM_LINKED_IN_MINIAPP?'Telegram подключён':'Привязать Telegram'}</button></div><h3 class="section-subtitle">Последние отзывы</h3>${data.reviews.length?`<div class="review-list">${data.reviews.slice(0,5).map(r=>`<article class="review-item"><b>${esc(r.reviewer)} · ${'★'.repeat(Number(r.rating))}${'☆'.repeat(5-Number(r.rating))}</b><p>${esc(r.comment||'Без комментария')}</p><small>${new Date(r.created_at).toLocaleDateString('ru-RU')}</small></article>`).join('')}</div>`:'<p class="modal-lead">Отзывов пока нет.</p>'}<div class="modal-actions"><button class="primary-action" id="profileDeals">Мои сделки</button><button class="secondary-action" id="profileWallet">Кошелёк</button>${current.role==='seller'?'<button class="secondary-action" id="profileSeller">Панель продавца</button>':''}${current.role==='admin'?'<button class="secondary-action" id="profileStore">Объявления KLB STORE</button>':''}${(current.role==='admin'||Number(current.moderator_level||0)>0)?'<button class="secondary-action" id="profileAdmin">Админ-панель</button>':''}</div></div>`);
     $('#profileUsernameForm').onsubmit=async e=>{e.preventDefault();const field=e.currentTarget.elements.username,button=e.currentTarget.querySelector('button'),name=field.value.trim();button.disabled=true;try{await SB.updateMyUsername(name);current.username=name;refreshHeader();notify('Никнейм и логин изменены');await showProfile()}catch(err){notify(SB.ruError(err));button.disabled=false}};
     $('#profileTelegramConnect').onclick=async()=>{if(window.KLB_TELEGRAM_LINKED_IN_MINIAPP){notify('Telegram подключён к этому аккаунту.');return}try{const code=await SB.createTelegramLinkCode(),bot=(window.KLB_SUPABASE_CONFIG?.telegramBotUsername||'').replace(/^@/,'' );if(!bot||bot==='YOUR_BOT_USERNAME'){modal('Привязка Telegram',`<p class="modal-lead">Сначала укажи публичный username бота в supabase-config.js.</p><p>Код для привязки: <b>${esc(code)}</b></p>`);return}const link=`https://t.me/${bot}?start=${encodeURIComponent(code)}`;modal('Привязка Telegram',`<p class="modal-lead">Открой бота и нажми Start. После этого бот сможет присылать уведомления о новых заказах.</p><a class="primary-action telegram-connect-link" href="${link}" target="_blank" rel="noopener">Открыть Telegram-бота</a><p>Код действует 15 минут.</p>`)}catch(err){notify(SB.ruError(err))}};
     $('#profileBioForm').onsubmit=async e=>{e.preventDefault();const field=e.currentTarget.elements.bio,btn=e.currentTarget.querySelector('button');btn.disabled=true;try{await SB.updateMyBio(field.value);notify('Описание профиля сохранено');await showProfile()}catch(err){$('#profileBioError').textContent=SB.ruError(err);btn.disabled=false}};
     $('#profilePromoActivate').onclick=openPromoActivationDialog;
+    if($('#profilePartnerDashboard'))$('#profilePartnerDashboard').onclick=showPartnerDashboard;
     if($('#profilePromoDeactivate'))$('#profilePromoDeactivate').onclick=async()=>{const b=$('#profilePromoDeactivate');b.disabled=true;try{await SB.deactivateMarketplacePromo();notify('Промокод снят');await showProfile()}catch(err){notify(SB.ruError(err));b.disabled=false}};
     $('#profileDeals').onclick=showDeals;$('#profileWallet').onclick=walletDialog;$('#profileWalletOpen').onclick=walletDialog;$('#profileSeller')?.addEventListener('click',sellerDashboard);$('#profileStore')?.addEventListener('click',sellerDashboard);if($('#profileAdmin'))$('#profileAdmin').onclick=()=>location.href='admin-login.html';
   }catch(e){modal('Мой профиль',`<p class="form-error">${esc(SB.ruError(e))}</p>`)}
 }
+async function showPartnerDashboard(){
+  if(!SB||!current)return;
+  try{
+    const data=await SB.partnerDashboard();
+    if(!data?.partner){notify('Партнёрский кабинет недоступен для этого аккаунта');return}
+    const promo=data.promo||{},stats=data.stats||{},recent=data.recent_earnings||[];
+    const typeLabels={youtube:'YouTuber',streamer:'Стример',blogger:'Блогер',influencer:'Инфлюенсер',creator:'Автор контента',other:'Партнёр'};
+    const expiration=promo.expires_at?new Date(promo.expires_at).toLocaleDateString('ru-RU'):'Без срока';
+    modal('Для партнёров',`<div class="partner-dashboard-shell">
+      <section class="partner-dashboard-hero"><div><span class="partner-eyebrow">ПАРТНЁР KLB STORE</span><h3>${esc(promo.promo_name||promo.code||'Твой промокод')}</h3><span>${esc(typeLabels[data.partner.type]||data.partner.type||'Партнёр')}</span></div><span class="partner-active-state ${promo.is_active?'is-active':'is-inactive'}">${promo.is_active?'РАБОТАЕТ':'ОТКЛЮЧЁН'}</span></section>
+      ${promo.code?`<section class="partner-code-card"><small>ТВОЙ ПРОМОКОД</small><div class="partner-code-row"><b>${esc(promo.code)}</b><button type="button" class="secondary-action" id="copyPartnerCode">Копировать</button></div><div class="partner-rates"><span>Покупателю: <b>${Number(promo.discount_percent||0)}% скидки</b></span><span>Тебе: <b>${Number(promo.commission_percent||0)}% комиссии</b></span><span>Срок: <b>${expiration}</b></span></div></section>`:'<p class="modal-lead">Администрация ещё не выдала тебе промокод. Обратись к создателю KLB STORE.</p>'}
+      <div class="partner-stats-grid"><article><b>${Number(stats.code_uses||0)}</b><span>Использований промокода</span></article><article><b>${Number(stats.completed_orders||0)}</b><span>Завершённых заказов</span></article><article><b>${Number(stats.buyers_count||0)}</b><span>Покупателей</span></article><article><b>${Number(stats.spent_amount||0).toLocaleString('ru-RU')} ₽</b><span>Потрачено покупателями</span></article><article class="partner-earnings-stat"><b>${Number(stats.earned_amount||0).toLocaleString('ru-RU')} ₽</b><span>Заработано по завершённым сделкам</span></article><article><b>${Number(stats.credited_amount||0).toLocaleString('ru-RU')} ₽</b><span>Фактически зачислено на баланс</span></article><article><b>${Number(stats.outstanding_debt||0).toLocaleString('ru-RU')} ₽</b><span>Непогашенный долг по спорам</span></article></div>
+      <p class="partner-dashboard-note">Комиссия начисляется на твой баланс после того, как покупатель подтвердит получение товара или услуги. Процент рассчитывается от исходной цены заказа до скидки.</p>
+      <h3 class="section-subtitle">Последние начисления</h3>
+      ${recent.length?`<div class="partner-earnings-list">${recent.map(r=>`<article><div><b>${esc(r.code||promo.code||'Промокод')}</b><small>${new Date(r.created_at).toLocaleDateString('ru-RU')} · Заказ ${esc(String(r.order_id||'').slice(0,8))}</small></div><strong class="${r.status==='reversed'?'partner-reversed':''}">${r.status==='reversed'?'Отменено':`+${Number(r.credited_amount||r.commission_amount||0).toLocaleString('ru-RU')} ₽`}</strong></article>`).join('')}</div>`:'<p class="modal-lead">Начислений пока нет. Первое появится после завершённой покупки по твоему промокоду.</p>'}
+    </div>`);
+    if(promo.code&&$('#copyPartnerCode'))$('#copyPartnerCode').onclick=async()=>{try{await navigator.clipboard.writeText(promo.code);notify('Промокод скопирован')}catch{notify('Не удалось скопировать промокод')}};
+  }catch(err){modal('Для партнёров',`<p class="form-error">${esc(SB.ruError(err))}</p>`)}
+}
+
 async function showPublicProfile(userId,chatId=null){
   if(!SB||!userId)return;
   try{
@@ -607,14 +623,7 @@ $('#favoritesBtn').onclick=()=>{if(!current){authDialog('signup');return}showFav
 async function loadCatalog(){try{if(!SB)return;products=(await SB.catalog()).map(p=>({id:p.id,seller_id:p.seller_id,title:p.title,description:p.description,desc:p.description||'Цифровой товар',price:Number(p.price)||0,category:p.category||'other',catalog_category:p.catalog_category||'other',catalog_subcategory:p.catalog_subcategory||'other',stock:Number(p.stock||0),created_at:p.created_at,image:p.image_url||'',symbol:'✦',label:'KLB',seller:p.seller||'',is_store:p.seller_role==='admin',seller_rating:Number(p.seller_rating||0),seller_review_count:Number(p.seller_review_count||0),promotion_rank:Number(p.promotion_rank||0),promoted_at:p.promoted_at||null}));render()}catch(e){console.error(e);notify(SB.ruError(e)||'Не удалось загрузить каталог')}}
 const telegramCallbackParams=new URLSearchParams(location.search);
 if(telegramCallbackParams.has('code')||telegramCallbackParams.has('error')){
-  handleTelegramOidcCallback().catch(error=>{
-    console.error('KLB Telegram OIDC callback:',error);
-    const message=SB?.ruError?SB.ruError(error):String(error.message||error);
-    refreshProfile().then(refreshHeader);
-    modal('Не удалось войти через Telegram',`<p class="form-error">${esc(message)}</p><p class="modal-lead">Telegram вернул пользователя на сайт, но KLB STORE не завершил вход. Скопируй текст ошибки для диагностики.</p><button class="primary-action" id="telegramOidcRetry">Повторить вход</button><button class="secondary-action" id="telegramOidcClose">Закрыть</button>`);
-    $('#telegramOidcRetry').onclick=()=>{closeModal();authDialog('login')};
-    $('#telegramOidcClose').onclick=closeModal;
-  });
+  handleTelegramOidcCallback().catch(error=>{console.error('KLB Telegram OIDC callback:',error);notify(SB?.ruError?SB.ruError(error):String(error.message||error));refreshProfile().then(refreshHeader);});
 }else if(window.Telegram?.WebApp?.initData){
   handleTelegramMiniAppStartup().catch(async error=>{
     console.error('KLB Telegram Mini App auth:',error);

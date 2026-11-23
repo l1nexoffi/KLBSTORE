@@ -6,24 +6,6 @@
   if (!B || !B.configured) return;
   const sb = B.client;
 
-  // Preserve the actual JSON error returned by telegram-auth instead of showing
-  // the generic "Edge Function returned a non-2xx status code" message.
-  async function invokeTelegramAuth(body) {
-    const { data, error } = await sb.functions.invoke('telegram-auth', { body });
-    if (!error) return data;
-    let message = error.message || 'Telegram authentication failed';
-    const response = error.context;
-    if (response && typeof response.clone === 'function') {
-      try {
-        const payload = await response.clone().json();
-        if (payload?.error || payload?.message) message = String(payload.error || payload.message);
-      } catch (_) { /* Keep the SDK error when the body is not JSON. */ }
-    }
-    const enriched = new Error(message);
-    enriched.name = error.name || 'TelegramAuthError';
-    throw enriched;
-  }
-
   const ERRORS = {
     'Authentication required': 'Войди в аккаунт.',
     'Invalid amount': 'Сумма должна быть от 100 до 1 000 000 ₽.',
@@ -78,7 +60,15 @@
     'No active promo code': 'Нет активированного промокода.',
     'Promo discount exceeds order total': 'Скидка промокода превышает стоимость заказа.',
     'Promo percentage must be below 100': 'Скидка в процентах должна быть меньше 100%.',
-    'Promo code already active': 'Этот промокод уже активирован.'
+    'Promo code already active': 'Этот промокод уже активирован.',
+    'Active partner not found': 'Партнёр не найден или его статус отключён.',
+    'You cannot use your own partner promo': 'Нельзя активировать собственный партнёрский промокод.',
+    'Invalid promo code': 'Некорректный формат промокода.',
+    'Discount percentage must be between 0 and 100': 'Скидка должна быть больше 0% и меньше 100%.',
+    'Partner commission must be greater than 0 and at most 100': 'Комиссия партнёра должна быть больше 0% и не превышать 100%.',
+    'Invalid partner type': 'Выбран неизвестный тип партнёра.',
+    'Partner account must be active': 'Нельзя назначить партнёром заблокированный аккаунт.',
+    'Referral promo not found': 'Реферальный промокод не найден.'
   };
   const ruError = e => {
     const m = String((e && (e.message || e.error_description)) || e || '');
@@ -139,6 +129,9 @@
     },
     async deactivateMarketplacePromo() {
       must(await sb.rpc('klb_deactivate_marketplace_promo'));
+    },
+    async partnerDashboard() {
+      return must(await sb.rpc('klb_partner_dashboard'));
     },
 
     /* ---------- seller applications (user) ---------- */
@@ -344,21 +337,24 @@
     },
     async telegramLoginCode(code, codeVerifier, redirectUri) {
       if (!code || !codeVerifier || !redirectUri) throw new Error('Не хватает данных возврата Telegram. Начни вход заново.');
-      const data = await invokeTelegramAuth({ code, code_verifier: codeVerifier, redirect_uri: redirectUri });
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { code, code_verifier: codeVerifier, redirect_uri: redirectUri } });
+      if (error) throw error;
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;
       return { ...data, session: verified.session };
     },
     async telegramLogin(idToken) {
       if (typeof idToken !== 'string' || idToken.split('.').length !== 3) throw new Error('Некорректный Telegram ID token.');
-      const data = await invokeTelegramAuth({ id_token: idToken });
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { id_token: idToken } });
+      if (error) throw error;
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;
       return { ...data, session: verified.session };
     },
     async telegramMiniAppLogin(initData) {
       if (typeof initData !== 'string' || !initData) throw new Error('Telegram Mini App не передал initData. Открой KLB STORE через меню бота в Telegram.');
-      const data = await invokeTelegramAuth({ init_data: initData, source: 'miniapp' });
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { init_data: initData, source: 'miniapp' } });
+      if (error) throw error;
       if (!data?.token_hash) throw new Error(data?.error || 'Сервер не вернул токен входа Telegram.');
       const { data: verified, error: verifyError } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
       if (verifyError) throw verifyError;
@@ -366,7 +362,9 @@
     },
     async linkTelegramMiniApp(initData) {
       if (typeof initData !== 'string' || !initData) throw new Error('Telegram Mini App не передал initData.');
-      return await invokeTelegramAuth({ init_data: initData, action: 'link', source: 'miniapp' });
+      const { data, error } = await sb.functions.invoke('telegram-auth', { body: { init_data: initData, action: 'link', source: 'miniapp' } });
+      if (error) throw error;
+      return data;
     },
 
     /* ---------- admin ---------- */
@@ -501,7 +499,20 @@
       async assignModerator(username, level) { must(await sb.rpc('klb_assign_moderator', { p_username: username, p_level: Number(level) })); },
       async promoCodes() { return must(await sb.from('marketplace_promo_codes').select('*').order('created_at', { ascending: false }).limit(300)); },
       async createPromoCode(value) { const row = must(await sb.from('marketplace_promo_codes').insert(value).select().single()); must(await sb.rpc('klb_log_moderator_activity', { p_action: 'promo_created', p_target_id: row.id })); return row; },
-      async updatePromoCode(id, patch) { const row = must(await sb.from('marketplace_promo_codes').update(patch).eq('id', id).select().single()); const action = patch.is_active === true ? 'promo_enabled' : 'promo_disabled'; must(await sb.rpc('klb_log_moderator_activity', { p_action: action, p_target_id: id })); return row; }
+      async updatePromoCode(id, patch) { const row = must(await sb.from('marketplace_promo_codes').update(patch).eq('id', id).select().single()); const action = patch.is_active === true ? 'promo_enabled' : 'promo_disabled'; must(await sb.rpc('klb_log_moderator_activity', { p_action: action, p_target_id: id })); return row; },
+      async partners() { return must(await sb.rpc('klb_admin_partner_roster')); },
+      async setPartner(username, partnerType, active=true) { must(await sb.rpc('klb_admin_set_partner', { p_username: username, p_partner_type: partnerType, p_active: !!active })); },
+      async createReferralPromo(value) { return must(await sb.rpc('klb_admin_create_referral_promo', {
+        p_username: value.username, p_promo_name: value.promo_name, p_code: value.code,
+        p_discount_percent: Number(value.discount_percent), p_commission_percent: Number(value.commission_percent),
+        p_expires_at: value.expires_at || null
+      })); },
+      async updateReferralPromo(id, patch) { must(await sb.rpc('klb_admin_update_referral_promo', {
+        p_promo_id: id, p_promo_name: patch.promo_name,
+        p_discount_percent: Number(patch.discount_percent),
+        p_commission_percent: Number(patch.commission_percent),
+        p_expires_at: patch.expires_at || null, p_is_active: !!patch.is_active
+      })); }
     }
   };
   api.staffAccess = () => sb.rpc('klb_staff_access').then(({data,error})=>{if(error)throw error;return data;});
