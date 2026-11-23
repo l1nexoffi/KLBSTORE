@@ -11,6 +11,9 @@
     'Invalid amount': 'Сумма должна быть от 100 до 1 000 000 ₽.',
     'Minimum withdrawal is 500': 'Минимальная сумма вывода 500 ₽.',
     'Insufficient balance': 'Недостаточно средств на балансе.',
+    'Bonus amount must be greater than 0 and at most 1000000': 'Бонус должен быть больше 0 и не превышать 1 000 000 ₽.',
+    'Bonus reason must contain 3 to 250 characters': 'Укажи причину начисления (от 3 до 250 символов).',
+    'Cannot grant bonus to blocked account': 'Нельзя начислить бонус заблокированному аккаунту.',
     'Insufficient balance for promotion': 'Для продвижения нужно минимум 49 ₽ на доступном балансе.',
     'Seller account required': 'Продвигать объявления могут только продавцы.',
     'Listing must be approved and active': 'Продвигать можно только одобренное активное объявление с остатком товара.',
@@ -100,8 +103,8 @@
     /* ---------- wallet (user) ---------- */
     async wallet() {
       const id = await uid();
-      const r = must(await sb.from('wallets').select('available,reserved,escrow').eq('user_id', id).maybeSingle());
-      return { available: Number(r?.available || 0), reserved: Number(r?.reserved || 0), escrow: Number(r?.escrow || 0) };
+      const r = must(await sb.from('wallets').select('available,bonus_available,reserved,escrow').eq('user_id', id).maybeSingle());
+      return { available: Number(r?.available || 0), bonus_available: Number(r?.bonus_available || 0), reserved: Number(r?.reserved || 0), escrow: Number(r?.escrow || 0) };
     },
     async ledger() { return must(await sb.from('wallet_ledger').select('*').order('created_at', { ascending: false }).limit(100)); },
     async depositInstructions() {
@@ -421,13 +424,20 @@
       },
       async users() {
         const rows = must(await sb.from('profiles').select('id,username,role,status,created_at').order('created_at', { ascending: false }).limit(500));
-        return rows.map(r => ({ id: r.id, username: r.username, role: r.role, status: r.status === 'blocked' ? 'Заблокирован' : 'Активен', joined: new Date(r.created_at).toLocaleDateString('ru-RU') }));
+        const ids = rows.map(r => r.id);
+        const walletChunks = [];
+        for (let i = 0; i < ids.length; i += 100) walletChunks.push(ids.slice(i, i + 100));
+        const walletResults = await Promise.all(walletChunks.map(chunk => sb.from('wallets').select('user_id,available,bonus_available').in('user_id', chunk)));
+        const walletRows = walletResults.flatMap(result => must(result));
+        const walletMap = Object.fromEntries(walletRows.map(w => [w.user_id, w]));
+        return rows.map(r => ({ id: r.id, username: r.username, role: r.role, status: r.status === 'blocked' ? 'Заблокирован' : 'Активен', joined: new Date(r.created_at).toLocaleDateString('ru-RU'), available: Number(walletMap[r.id]?.available || 0), bonus_available: Number(walletMap[r.id]?.bonus_available || 0) }));
       },
       async setBlocked(id, blocked) { must(await sb.rpc('admin_set_user_blocked', { p_user: id, p_blocked: blocked })); },
+      async grantBonus(id, amount, reason) { return must(await sb.rpc('klb_admin_grant_bonus', { p_user_id: id, p_amount: amount, p_reason: reason })); },
       async balances() {
-        const w = must(await sb.from('wallets').select('user_id,available,reserved,escrow,updated_at').order('updated_at', { ascending: false }).limit(500));
+        const w = must(await sb.from('wallets').select('user_id,available,bonus_available,reserved,escrow,updated_at').order('updated_at', { ascending: false }).limit(500));
         const names = await profilesMap(w.map(r => r.user_id));
-        return w.map(r => ({ userId: r.user_id, username: names[r.user_id]?.username || r.user_id.slice(0, 8), available: Number(r.available), reserved: Number(r.reserved), escrow: Number(r.escrow || 0) }));
+        return w.map(r => ({ userId: r.user_id, username: names[r.user_id]?.username || r.user_id.slice(0, 8), available: Number(r.available), bonus_available: Number(r.bonus_available || 0), reserved: Number(r.reserved), escrow: Number(r.escrow || 0) }));
       },
       async ledger() {
         const rows = must(await sb.from('wallet_ledger').select('*').order('created_at', { ascending: false }).limit(200));
