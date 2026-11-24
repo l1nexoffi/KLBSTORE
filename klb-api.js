@@ -287,9 +287,17 @@
       const result = must(await sb.rpc('create_marketplace_order', { p_listing_id: listingId, p_quantity: quantity, p_expected_unit_price: expectedUnitPrice }));
       // Telegram notification is an auxiliary effect. A bot outage never reverses a successful checkout.
       try {
-        const { data, error } = await sb.functions.invoke('telegram-order-notify', { body: { order_id: result.order_id } });
-        if (error) console.warn('KLB Telegram seller notification could not be sent:', error);
-        else if (data && data.sent === false) console.warn('KLB Telegram seller notification was not delivered:', data.reason || 'Seller Telegram chat is not linked');
+        const notifySession = await B.session();
+        if (!notifySession?.access_token) {
+          console.warn('KLB Telegram seller notification skipped: no active buyer session token.');
+        } else {
+          const { data, error } = await sb.functions.invoke('telegram-order-notify', {
+            body: { order_id: result.order_id },
+            headers: { Authorization: `Bearer ${notifySession.access_token}` }
+          });
+          if (error) console.warn('KLB Telegram seller notification could not be sent:', error);
+          else if (data && data.sent === false) console.warn('KLB Telegram seller notification was not delivered:', data.reason || 'Seller Telegram chat is not linked');
+        }
       } catch (err) { console.warn('KLB Telegram seller notification could not be sent:', err); }
       return result;
     },
