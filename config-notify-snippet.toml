@@ -1,0 +1,3 @@
+# Add this block to supabase/config.toml. Do not duplicate an existing block.
+[functions.telegram-admin-notify]
+verify_jwt = false
