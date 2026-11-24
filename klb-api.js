@@ -263,7 +263,8 @@
         seller_id: id, title: v.title, description: v.description,
         category: v.category, catalog_category: v.catalog_category || 'other',
         catalog_subcategory: v.catalog_subcategory || 'other',
-        price: v.price, stock, image_url: v.image_url || null
+        price: v.price, stock, image_url: v.image_url || null,
+        status: 'pending'
       }).select().single());
       void notifyAdmins('listing', row.id);
       return row;
