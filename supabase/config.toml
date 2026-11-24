@@ -1,0 +1,7 @@
+# These functions validate the caller's Supabase session inside index.ts with auth.getUser().
+# Disable only the gateway's pre-validation to avoid gateway 401s; do not remove in-function auth.
+[functions.telegram-admin-notify]
+verify_jwt = false
+
+[functions.telegram-order-notify]
+verify_jwt = false
