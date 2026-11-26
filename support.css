@@ -1,0 +1,56 @@
+/* KLB STORE — Поддержка (сайт + админ-панель). Стили изолированы префиксом ksup. */
+.ksup{display:grid;gap:14px;color:inherit;font-size:14px}
+.ksup-muted{color:#8fa3bd;margin:6px 0}
+.ksup-error{color:#ff8b8b;margin:0;min-height:0}
+.ksup-error:empty{display:none}
+.ksup-head{display:grid;gap:12px}
+.ksup-title{display:flex;align-items:center;gap:14px}
+.ksup-title h3{margin:0;font-size:19px;line-height:1.25;overflow-wrap:anywhere}
+.ksup-title p{margin:3px 0 0;color:#8fa3bd;font-size:13px}
+.ksup-ico{width:52px;height:52px;flex:none;object-fit:contain}
+.ksup-back{justify-self:start;background:none;border:0;color:#7fb0ff;font:inherit;font-weight:600;cursor:pointer;padding:0}
+.ksup-primary{border:0;border-radius:10px;background:#287dff;color:#fff;font:inherit;font-weight:700;padding:12px 16px;cursor:pointer}
+.ksup-primary:hover{background:#3a8bff}
+.ksup-primary:disabled{opacity:.55;cursor:default}
+.ksup-ghost{border:1px solid rgba(255,255,255,.18);border-radius:10px;background:transparent;color:inherit;font:inherit;font-weight:600;padding:10px 14px;cursor:pointer}
+.ksup-ghost:hover{border-color:#287dff}
+.ksup-head>.ksup-status{justify-self:start}
+.ksup-actions{display:flex;justify-content:flex-end}
+.ksup-chips{display:flex;flex-wrap:wrap;gap:8px}
+.ksup-chip{border:1px solid rgba(255,255,255,.16);border-radius:999px;background:transparent;color:inherit;font:inherit;font-size:13px;padding:7px 14px;cursor:pointer}
+.ksup-chip b{margin-left:4px;color:#8fa3bd}
+.ksup-chip.active{background:#287dff;border-color:#287dff;color:#fff}
+.ksup-chip.active b{color:#fff}
+.ksup-list{display:grid;gap:10px}
+.ksup-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.04);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.ksup-item:hover{border-color:#3887ff;background:rgba(56,135,255,.08)}
+.ksup-item-main{display:grid;gap:4px;min-width:0}
+.ksup-item-main b{overflow-wrap:anywhere}
+.ksup-item-main small{color:#8fa3bd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46ch}
+.ksup-item-side{display:grid;gap:6px;justify-items:end;flex:none}
+.ksup-item-side small{color:#8fa3bd;font-size:11px}
+.ksup-status{display:inline-block;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.ksup-status.wait{background:rgba(255,184,64,.16);color:#ffc15e}
+.ksup-status.ok{background:rgba(53,224,190,.14);color:#35e0be}
+.ksup-status.closed{background:rgba(255,255,255,.08);color:#9aa7ba}
+.ksup-msgs{display:flex;flex-direction:column;gap:10px;min-height:220px;max-height:46vh;overflow:auto;padding:14px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(0,0,0,.28)}
+.ksup-msg{align-self:flex-start;max-width:84%;padding:10px 13px;border:1px solid rgba(255,255,255,.12);border-radius:14px 14px 14px 4px;background:#172333;line-height:1.45;overflow-wrap:anywhere;display:grid;gap:3px}
+.ksup-msg.mine{align-self:flex-end;border-color:#2d6fbd;background:#14345a;border-radius:14px 14px 4px 14px}
+.ksup-msg.staff{border-color:rgba(53,224,190,.45);background:#13292f}
+.ksup-msg.staff.mine{background:#14363a}
+.ksup-name{color:#8fa3bd;font-size:11px;font-weight:700}
+.ksup-msg.staff .ksup-name{color:#35e0be}
+.ksup-time{color:#8fa3bd;font-size:10px;justify-self:end}
+.ksup-closed-note{align-self:center;margin:4px 0 0;color:#8fa3bd;font-size:12px;text-align:center}
+.ksup-form{display:grid;gap:10px}
+.ksup-form label{display:grid;gap:6px;color:#b9c7d9;font-size:13px}
+.ksup-form input,.ksup-form textarea{width:100%;box-sizing:border-box;border:1px solid #304057;background:#0b121c;color:#fff;border-radius:10px;padding:12px;font:inherit;outline:none;resize:vertical}
+.ksup-form input:focus,.ksup-form textarea:focus{border-color:#287dff}
+.ksup-reply{grid-template-columns:1fr auto;align-items:end}
+/* Строка «Поддержка» в списке чатов */
+.ksup-row{gap:14px}
+.ksup-row .ksup-ico{width:46px;height:46px}
+.ksup-row .chat-list-main{flex:1;min-width:0}
+.ksup-badge{min-width:26px;height:26px;padding:0 8px;border-radius:999px;background:#ff5d5d;color:#fff;font-weight:800;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+.ksup-arrow{color:#8fa3bd;font-size:24px;line-height:1}
+@media(max-width:650px){.ksup-reply{grid-template-columns:1fr}.ksup-msg{max-width:92%}.ksup-item{align-items:flex-start}.ksup-item-main small{max-width:26ch}.ksup-msgs{max-height:42vh}}

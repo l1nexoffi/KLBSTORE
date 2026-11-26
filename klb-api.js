@@ -7,6 +7,9 @@
   const sb = B.client;
 
   const ERRORS = {
+    'Too many open support requests': 'У тебя уже 3 открытых обращения. Дождись ответа или закрой одно из них.',
+    'Support request not found': 'Обращение не найдено.',
+    'Слишком часто': 'Слишком часто. Подожди минуту и попробуй снова.',
     'Authentication required': 'Войди в аккаунт.',
     'Invalid amount': 'Сумма должна быть от 100 до 1 000 000 ₽.',
     'Minimum withdrawal is 500': 'Минимальная сумма вывода 500 ₽.',
@@ -592,6 +595,23 @@
         p_expires_at: patch.expires_at || null, p_is_active: !!patch.is_active
       })); }
     }
+  };
+  // ---------- support chat (users + staff). Notifications to the bot are best-effort. ----------
+  api.support = {
+    async access() { return must(await sb.rpc('klb_support_access')); },
+    async tickets() { return must(await sb.rpc('klb_support_tickets')); },
+    async messages(ticketId) { return must(await sb.rpc('klb_support_messages', { p_ticket: ticketId })); },
+    async create(subject, body) {
+      const r = must(await sb.rpc('klb_support_create_ticket', { p_subject: subject, p_body: body }));
+      void notifyAdmins('support_ticket', r?.ticket_id);
+      return r;
+    },
+    async send(ticketId, body) {
+      const r = must(await sb.rpc('klb_support_send', { p_ticket: ticketId, p_body: body }));
+      if (r && !r.is_staff) void notifyAdmins('support_message', r.message_id);
+      return r;
+    },
+    async setStatus(ticketId, status) { must(await sb.rpc('klb_support_set_status', { p_ticket: ticketId, p_status: status })); }
   };
   api.staffAccess = () => sb.rpc('klb_staff_access').then(({data,error})=>{if(error)throw error;return data;});
   Object.assign(B, api);
